@@ -1,0 +1,77 @@
+### Compiled Class / Build Artifacts ###
+HELP.md
+target/
+build/
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### Logs & Runtime Data ###
+*.log
+logs/
+*.log.*
+hs_err_pid*
+replay_pid*
+
+### Environment & Secrets (Security Critical) ###
+.env
+.env.*
+!.env.example
+*.env
+application-local.properties
+application-local.yml
+application-local.yaml
+application-secret.properties
+application-secret.yml
+application-secret.yaml
+secrets/
+*.pem
+*.key
+*.p12
+
+### IntelliJ IDEA & JetBrains IDEs ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.idea_modules/
+
+### Maven & Tooling ###
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+### OS Specific Files (Windows / Mac / Linux) ###
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+### Crash / Temp Files ###
+*.tmp
+*.bak
+*.swp
+*~
+
+### VS Code ###
+.vscode/
