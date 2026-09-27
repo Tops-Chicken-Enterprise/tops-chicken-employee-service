@@ -4,7 +4,10 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "employee_bank_account")
+@Table(name = "employee_bank_account",
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = {"employee_id", "account_number"})
+        })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -26,7 +29,7 @@ public class EmployeeBankAccount extends BaseEntity {
     @Column(name = "branch_name", nullable = false, length = 100)
     private String branchName;
 
-    @Column(name = "account_number", nullable = false, unique = true, length = 50)
+    @Column(name = "account_number", nullable = false, length = 50)
     private String accountNumber;
 
     @Column(name = "account_holder_name", nullable = false, length = 100)
@@ -34,5 +37,5 @@ public class EmployeeBankAccount extends BaseEntity {
 
     @Column(name = "is_primary", nullable = false)
     @Builder.Default
-    private Boolean isPrimary = true;
+    private Boolean isPrimary = false;
 }
