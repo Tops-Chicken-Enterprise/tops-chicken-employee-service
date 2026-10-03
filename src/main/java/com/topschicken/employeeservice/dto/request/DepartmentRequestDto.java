@@ -27,6 +27,5 @@ public class DepartmentRequestDto {
     @Size(max = 255, message = "Description must not exceed 255 characters")
     private String description;
 
-    @NotNull(message = "Active status is mandatory")
     private Boolean isActive;
 }

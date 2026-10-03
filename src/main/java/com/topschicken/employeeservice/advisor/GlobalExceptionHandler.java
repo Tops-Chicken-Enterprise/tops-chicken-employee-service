@@ -44,26 +44,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponseDto<Map<String, String>>> handleValidationExceptions(
             MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
+        ex.getBindingResult().getFieldErrors().forEach(error ->
+                errors.put(error.getField(), error.getDefaultMessage())
+        );
 
-        ex.getBindingResult().getAllErrors().forEach(error -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
-        });
-
-        String primaryMessage = ex.getBindingResult().getFieldErrors().stream()
-                .map(FieldError::getDefaultMessage)
-                .findFirst()
-                .orElse("Validation failed for one or more fields");
-
-        ApiResponseDto<Map<String, String>> response = ApiResponseDto.<Map<String, String>>builder()
-                .success(false)
-                .status(HttpStatus.BAD_REQUEST.value())
-                .message(primaryMessage)
-                .data(errors)
-                .build();
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponseDto.<Map<String, String>>builder()
+                        .success(false)
+                        .status(HttpStatus.BAD_REQUEST.value())
+                        .message("Validation failed. Please check the submitted fields")
+                        .data(errors)
+                        .build());
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -96,6 +88,26 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponseDto.error(HttpStatus.CONFLICT.value(), userFriendlyMessage));
+    }
+
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<ApiResponseDto<Map<String, String>>> handleConstraintViolationException(
+            jakarta.validation.ConstraintViolationException ex) {
+        Map<String, String> errors = new HashMap<>();
+        ex.getConstraintViolations().forEach(violation -> {
+            String propertyPath = violation.getPropertyPath().toString();
+            String fieldName = propertyPath.substring(propertyPath.lastIndexOf('.') + 1);
+            errors.put(fieldName, violation.getMessage());
+        });
+
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponseDto.<Map<String, String>>builder()
+                        .success(false)
+                        .status(HttpStatus.BAD_REQUEST.value())
+                        .message("Invalid parameter value provided")
+                        .data(errors)
+                        .build());
     }
 
     @ExceptionHandler(Exception.class)
