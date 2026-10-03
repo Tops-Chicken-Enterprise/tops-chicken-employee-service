@@ -39,7 +39,12 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long>, JpaSp
     boolean existsByFarmIdAndBiometricId(Long farmId, Integer biometricId);
     boolean existsByFarmIdAndBiometricIdAndIdNot(Long farmId, Integer biometricId, Long id);
 
+    boolean existsByDesignationId(Long designationId);
+    boolean existsByDesignationIdAndEmploymentStatusNot(Long designationId, EmploymentStatus status);
+    boolean existsByDesignationIdAndResignedDateIsNull(Long designationId);
     List<Employee> findAllBySupervisorIdAndEmploymentStatus(Long supervisorId, EmploymentStatus status);
+
+
 
     @Query(value = """
             SELECT e FROM Employee e

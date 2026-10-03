@@ -14,13 +14,21 @@ import java.util.Optional;
 @Repository
 public interface JobDesignationRepository extends JpaRepository<JobDesignation, Long> {
 
-    Optional<JobDesignation> findByCodeIgnoreCase(String code);
+    @Query("SELECT jd FROM JobDesignation jd JOIN FETCH jd.department WHERE LOWER(jd.code) = LOWER(:code)")
+    Optional<JobDesignation> findByCodeIgnoreCaseWithDepartment(@Param("code") String code);
 
     boolean existsByCodeIgnoreCase(String code);
 
     boolean existsByCodeIgnoreCaseAndIdNot(String code, Long id);
 
-    List<JobDesignation> findAllByDepartmentIdAndIsActiveTrueOrderByTitleAsc(Long departmentId);
+    boolean existsByDepartmentId(Long departmentId);
+
+    boolean existsByDepartmentIdAndTitleIgnoreCase(Long departmentId, String title);
+
+    boolean existsByDepartmentIdAndTitleIgnoreCaseAndIdNot(Long departmentId, String title, Long id);
+
+    @Query("SELECT jd FROM JobDesignation jd JOIN FETCH jd.department WHERE jd.department.id = :departmentId AND jd.isActive = true ORDER BY jd.title ASC")
+    List<JobDesignation> findAllByDepartmentIdAndIsActiveTrueOrderByTitleAsc(@Param("departmentId") Long departmentId);
 
     boolean existsByDepartmentIdAndIsActiveTrue(Long departmentId);
 
@@ -38,6 +46,7 @@ public interface JobDesignationRepository extends JpaRepository<JobDesignation, 
                    LOWER(jd.title) LIKE LOWER(CONCAT('%', :search, '%')) OR
                    LOWER(d.name) LIKE LOWER(CONCAT('%', :search, '%')))
             AND (:departmentId IS NULL OR d.id = :departmentId)
+            AND (:isActive IS NULL OR jd.isActive = :isActive)
             """,
             countQuery = """
             SELECT COUNT(jd) FROM JobDesignation jd
@@ -47,10 +56,12 @@ public interface JobDesignationRepository extends JpaRepository<JobDesignation, 
                    LOWER(jd.title) LIKE LOWER(CONCAT('%', :search, '%')) OR
                    LOWER(d.name) LIKE LOWER(CONCAT('%', :search, '%')))
             AND (:departmentId IS NULL OR d.id = :departmentId)
+            AND (:isActive IS NULL OR jd.isActive = :isActive)
             """)
     Page<JobDesignation> searchAllJobDesignations(
             @Param("search") String search,
             @Param("departmentId") Long departmentId,
+            @Param("isActive") Boolean isActive,
             Pageable pageable
     );
 }
