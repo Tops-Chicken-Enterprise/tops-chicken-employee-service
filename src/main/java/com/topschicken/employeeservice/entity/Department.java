@@ -32,6 +32,9 @@ public class Department extends BaseEntity {
     @Builder.Default
     private Boolean isActive = true;
 
+    @Column(name = "wso2_org_id", length = 100)
+    private String wso2OrgId;
+
     @OneToMany(mappedBy = "department", cascade = CascadeType.ALL, orphanRemoval = false, fetch = FetchType.LAZY)
     @Builder.Default
     private List<JobDesignation> designations = new ArrayList<>();

@@ -91,11 +91,11 @@ public class EmployeeRequestDto {
     @Size(max = 255, message = "Profile image URL must not exceed 255 characters")
     private String profileImageUrl;
 
-    @Valid
-    @Builder.Default
-    private List<EmployeeAddressRequestDto> addresses = new ArrayList<>();
 
-    @Valid
     @Builder.Default
-    private List<EmployeeBankAccountRequestDto> bankAccounts = new ArrayList<>();
+    private List<@Valid EmployeeAddressRequestDto> addresses = new ArrayList<>();;
+
+
+    @Builder.Default
+    private List<@Valid EmployeeBankAccountRequestDto> bankAccounts = new ArrayList<>();;
 }

@@ -11,6 +11,7 @@ import com.topschicken.employeeservice.exception.ResourceNotFoundException;
 import com.topschicken.employeeservice.repository.DepartmentRepository;
 import com.topschicken.employeeservice.repository.JobDesignationRepository;
 import com.topschicken.employeeservice.service.DepartmentService;
+import com.topschicken.employeeservice.service.integration.Wso2IdentityClientService;
 import com.topschicken.employeeservice.util.mapper.DepartmentMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +31,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     private final DepartmentRepository departmentRepository;
     private final JobDesignationRepository jobDesignationRepository;
     private final DepartmentMapper departmentMapper;
+    private final Wso2IdentityClientService wso2IdentityClientService;
 
     @Override
     @Transactional
@@ -47,10 +49,16 @@ public class DepartmentServiceImpl implements DepartmentService {
             throw new DuplicateResourceException("Department with name '" + normalizedName + "' already exists");
         }
 
+        String wso2OrgId = wso2IdentityClientService.createWso2Organization(
+                normalizedName,
+                requestDto.getDescription()
+        );
+
         Department department = departmentMapper.toEntity(requestDto);
         department.setCode(normalizedCode);
         department.setName(normalizedName);
         department.setIsActive(true);
+        department.setWso2OrgId(wso2OrgId);
 
         Department savedDepartment = departmentRepository.save(department);
         log.info("Department created successfully with ID: {}", savedDepartment.getId());
