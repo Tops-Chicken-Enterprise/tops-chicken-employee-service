@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -19,6 +20,8 @@ public class JobDesignationResponseDto {
     private String code;
     private String title;
     private String description;
+    private List<String> permissions;
+    private String wso2GroupId;
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

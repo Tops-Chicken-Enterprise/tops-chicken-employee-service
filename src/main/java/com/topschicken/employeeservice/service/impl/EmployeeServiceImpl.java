@@ -76,15 +76,37 @@ public class EmployeeServiceImpl implements EmployeeService {
         );
 
         try {
+            // 1. හැදුණු සේවකයාව අදාළ JobDesignation එකේ WSO2 Group එකට ඇතුළත් කිරීම
+            if (designation.getWso2GroupId() != null && !designation.getWso2GroupId().isBlank()) {
+                wso2IdentityClientService.addUserToWso2Group(
+                        designation.getWso2GroupId(),
+                        wso2UserId,
+                        requestDto.getEmpCode(),
+                        targetWso2OrgId
+                );
+            }
+
+            // 2. Local DB හි සේවකයාව සුරැකීම
             transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
             return transactionTemplate.execute(status ->
                     saveEmployeeToDb(requestDto, designation, wso2UserId));
         } catch (Exception ex) {
-            log.error("Failed to save employee to local DB. Rolling back WSO2 user creation for: {}",
+            log.error("Failed to assign group or save employee to local DB. Rolling back WSO2 user creation for: {}",
                     requestDto.getEmpCode(), ex);
             wso2IdentityClientService.deleteWso2UserSafely(wso2UserId, targetWso2OrgId);
-            throw new RuntimeException("Database error occurred. WSO2 user creation was rolled back.", ex);
+            throw new RuntimeException("Error occurred during employee onboarding. WSO2 user creation was rolled back.", ex);
         }
+
+//        try {
+//            transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+//            return transactionTemplate.execute(status ->
+//                    saveEmployeeToDb(requestDto, designation, wso2UserId));
+//        } catch (Exception ex) {
+//            log.error("Failed to save employee to local DB. Rolling back WSO2 user creation for: {}",
+//                    requestDto.getEmpCode(), ex);
+//            wso2IdentityClientService.deleteWso2UserSafely(wso2UserId, targetWso2OrgId);
+//            throw new RuntimeException("Database error occurred. WSO2 user creation was rolled back.", ex);
+//        }
     }
 
     public EmployeeResponseDto saveEmployeeToDb(EmployeeRequestDto requestDto, JobDesignation designation, String wso2UserId) {
