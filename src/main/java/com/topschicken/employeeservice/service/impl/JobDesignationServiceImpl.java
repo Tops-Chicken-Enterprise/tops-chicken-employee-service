@@ -6,13 +6,16 @@ import com.topschicken.employeeservice.dto.response.paginate.PageMetaDataDto;
 import com.topschicken.employeeservice.dto.response.paginate.PagedResponseDto;
 import com.topschicken.employeeservice.entity.Department;
 import com.topschicken.employeeservice.entity.JobDesignation;
+import com.topschicken.employeeservice.entity.Permission;
 import com.topschicken.employeeservice.exception.BusinessValidationException;
 import com.topschicken.employeeservice.exception.DuplicateResourceException;
 import com.topschicken.employeeservice.exception.ResourceNotFoundException;
 import com.topschicken.employeeservice.repository.DepartmentRepository;
 import com.topschicken.employeeservice.repository.EmployeeRepository;
 import com.topschicken.employeeservice.repository.JobDesignationRepository;
+import com.topschicken.employeeservice.repository.PermissionRepository;
 import com.topschicken.employeeservice.service.JobDesignationService;
+import com.topschicken.employeeservice.service.integration.Wso2IdentityClientService;
 import com.topschicken.employeeservice.util.mapper.JobDesignationMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +36,8 @@ public class JobDesignationServiceImpl implements JobDesignationService {
     private final DepartmentRepository departmentRepository;
     private final EmployeeRepository employeeRepository;
     private final JobDesignationMapper jobDesignationMapper;
+    private final Wso2IdentityClientService wso2IdentityClientService;
+    private final PermissionRepository permissionRepository; // මේක අලුතින් Inject කරන්න
 
     @Override
     @Transactional
@@ -63,16 +68,96 @@ public class JobDesignationServiceImpl implements JobDesignationService {
             throw new BusinessValidationException("Cannot create designation under an inactive department");
         }
 
-        JobDesignation designation = jobDesignationMapper.toEntity(requestDto);
-        designation.setCode(normalizedCode);
-        designation.setTitle(normalizedTitle);
-        designation.setDepartment(department);
-        designation.setIsActive(true);
+        String wso2OrgId = department.getWso2OrgId();
+        String wso2GroupId = null;
 
-        JobDesignation savedDesignation = jobDesignationRepository.save(designation);
-        log.info("Job designation created successfully with ID: {}", savedDesignation.getId());
+        try {
+            // 1. WSO2 Sub-Organization තුළ SCIM2 Group එක සෑදීම
+            wso2GroupId = wso2IdentityClientService.createWso2Group(normalizedTitle, wso2OrgId);
 
-        return jobDesignationMapper.toResponseDto(savedDesignation);
+            // 2. WSO2 Role එක සාදා Group එකට Bind කිරීම
+            if (requestDto.getPermissions() != null && !requestDto.getPermissions().isEmpty()) {
+                wso2IdentityClientService.createWso2RoleAndBindToGroup(
+                        normalizedTitle, requestDto.getPermissions(), wso2GroupId, wso2OrgId
+                );
+            }
+
+            // 3. Frontend එකෙන් එවපු Scope Codes ටික Database එකේ Permission Entities බවට පත් කරගැනීම
+            List<Permission> permissionEntities = null;
+            if (requestDto.getPermissions() != null && !requestDto.getPermissions().isEmpty()) {
+                permissionEntities = permissionRepository.findByScopeCodeIn(requestDto.getPermissions());
+            }
+
+            // 4. Local DB හි සුරැකීම
+            JobDesignation designation = jobDesignationMapper.toEntity(requestDto);
+            designation.setCode(normalizedCode);
+            designation.setTitle(normalizedTitle);
+            designation.setDepartment(department);
+            designation.setWso2GroupId(wso2GroupId);
+            designation.setPermissions(permissionEntities); // දැන් දෙන්නේ Permission Entities ටිකයි
+            designation.setIsActive(true);
+
+            JobDesignation savedDesignation = jobDesignationRepository.saveAndFlush(designation);
+            log.info("Job designation created successfully with ID: {} and WSO2 Group ID: {}",
+                    savedDesignation.getId(), wso2GroupId);
+
+            return jobDesignationMapper.toResponseDto(savedDesignation);
+
+        } catch (Exception ex) {
+            if (wso2GroupId != null) {
+                log.error("Failed to complete designation creation. Rolling back WSO2 Group ID: {}", wso2GroupId);
+                wso2IdentityClientService.deleteWso2GroupSafely(wso2GroupId, wso2OrgId);
+            }
+            throw ex;
+        }
+
+        //==========================================
+
+//        try {
+//            // 1. WSO2 Sub-Organization තුළ SCIM2 Group එක සෑදීම
+//            wso2GroupId = wso2IdentityClientService.createWso2Group(normalizedTitle, wso2OrgId);
+//
+//            // 2. Permissions එවා ඇත්නම් WSO2 Role එක සාදා Group එකට Bind කිරීම
+//            if (requestDto.getPermissions() != null && !requestDto.getPermissions().isEmpty()) {
+//                wso2IdentityClientService.createWso2RoleAndBindToGroup(
+//                        normalizedTitle, requestDto.getPermissions(), wso2GroupId, wso2OrgId
+//                );
+//            }
+//
+//            // 3. Local DB හි සුරැකීම
+//            JobDesignation designation = jobDesignationMapper.toEntity(requestDto);
+//            designation.setCode(normalizedCode);
+//            designation.setTitle(normalizedTitle);
+//            designation.setDepartment(department);
+//            designation.setWso2GroupId(wso2GroupId);
+//            designation.setPermissions(requestDto.getPermissions());
+//            designation.setIsActive(true);
+//
+//            JobDesignation savedDesignation = jobDesignationRepository.saveAndFlush(designation);
+//            log.info("Job designation created successfully with ID: {} and WSO2 Group ID: {}",
+//                    savedDesignation.getId(), wso2GroupId);
+//
+//            return jobDesignationMapper.toResponseDto(savedDesignation);
+//
+//        } catch (Exception ex) {
+//            if (wso2GroupId != null) {
+//                log.error("Failed to complete designation creation. Rolling back WSO2 Group ID: {}", wso2GroupId);
+//                wso2IdentityClientService.deleteWso2GroupSafely(wso2GroupId, wso2OrgId);
+//            }
+//            throw ex;
+//        }
+
+        //============================================================================
+//        JobDesignation designation = jobDesignationMapper.toEntity(requestDto);
+//        designation.setCode(normalizedCode);
+//        designation.setTitle(normalizedTitle);
+//        designation.setDepartment(department);
+//        designation.setIsActive(true);
+//
+//        JobDesignation savedDesignation = jobDesignationRepository.save(designation);
+//        log.info("Job designation created successfully with ID: {}", savedDesignation.getId());
+//
+//        return jobDesignationMapper.toResponseDto(savedDesignation);
     }
 
     @Override

@@ -3,6 +3,8 @@ package com.topschicken.employeeservice.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.List;
+
 @Entity
 @Table(name = "job_designation", indexes = {
         @Index(name = "idx_job_designation_code", columnList = "code"),
@@ -31,6 +33,17 @@ public class JobDesignation extends BaseEntity {
 
     @Column(name = "description", length = 255)
     private String description;
+
+    @Column(name = "wso2_group_id", length = 100)
+    private String wso2GroupId;
+
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+            name = "job_designation_permission",
+            joinColumns = @JoinColumn(name = "job_designation_id"),
+            inverseJoinColumns = @JoinColumn(name = "permission_id")
+    )
+    private List<Permission> permissions;
 
     @Column(name = "is_active", nullable = false)
     @Builder.Default
