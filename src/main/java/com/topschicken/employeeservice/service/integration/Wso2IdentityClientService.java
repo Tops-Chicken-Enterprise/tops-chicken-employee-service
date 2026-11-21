@@ -224,10 +224,6 @@ public class Wso2IdentityClientService {
     }
 
     /**
-     * 4. Email Invitation Link (askPassword) හෝ Temporary Password මගින් User සෑදීම
-     */
-
-    /**
      * 4. Email Invitation Link (askPassword) + Secure Random Password මගින් User සෑදීම
      */
     public String createWso2User(String empCode, String email, String nic, String firstName, String lastName,
@@ -431,9 +427,6 @@ public class Wso2IdentityClientService {
         }
         throw new RuntimeException("Failed to create organization in WSO2");
     }
-// =========================================================================
-    // WSO2 SCIM2 GROUP & ROLE BINDING (JOB DESIGNATIONS)
-    // =========================================================================
 
     /**
      * JobDesignation එක සඳහා WSO2 Sub-Organization තුළ SCIM2 Group එකක් සෑදීම
@@ -468,10 +461,6 @@ public class Wso2IdentityClientService {
         }
         throw new RuntimeException("Failed to create WSO2 SCIM2 Group for designation: " + designationTitle);
     }
-
-    /**
-     * WSO2 Role එකක් සාදා ඊට අදාළ Permissions (Scopes) සහ Group එක Bind කිරීම
-     */
 
     /**
      * WSO2 Role එකක් සාදා ඊට අදාළ Permissions (Scopes) සහ Group එක Bind කිරීම (SCIM2 Roles V2)
@@ -528,58 +517,6 @@ public class Wso2IdentityClientService {
         }
         return null;
     }
-
-    //===================================================================
-//    public String createWso2RoleAndBindToGroup(String roleName, List<String> permissions, String groupId, String orgId) {
-//        if (permissions == null || permissions.isEmpty()) {
-//            log.info("No permissions provided for role {}. Skipping role creation.", roleName);
-//            return null;
-//        }
-//
-//        String token = getOrganizationToken(orgId);
-//        String formattedRoleName = roleName.trim().replaceAll("\\s+", "_") + "_ROLE";
-//        log.info("Creating WSO2 Role '{}' and binding to Group ID: {} in Org: {}", formattedRoleName, groupId, (orgId != null ? orgId : "Root"));
-//
-//        String targetUrl = (orgId != null && !orgId.isBlank())
-//                ? baseUrl + "/o/" + orgId + "/api/server/v1/roles"
-//                : baseUrl + "/api/server/v1/roles";
-//
-//        // Group එක Map කිරීම
-//        List<Map<String, String>> groupsPayload = List.of(
-//                Map.of("value", groupId)
-//        );
-//
-//        // Permissions Map කිරීම
-//        List<Map<String, String>> permissionsPayload = permissions.stream()
-//                .map(permission -> Map.of("value", permission))
-//                .toList();
-//
-//        Map<String, Object> payload = Map.of(
-//                "displayName", formattedRoleName,
-//                "groups", groupsPayload,
-//                "permissions", permissionsPayload
-//        );
-//
-//        try {
-//            Map response = restClient.post()
-//                    .uri(targetUrl)
-//                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-//                    .contentType(MediaType.APPLICATION_JSON)
-//                    .body(payload)
-//                    .retrieve()
-//                    .body(Map.class);
-//
-//            if (response != null && response.containsKey("id")) {
-//                String roleId = response.get("id").toString();
-//                log.info("Successfully created WSO2 Role ID: {} and bound to Group ID: {}", roleId, groupId);
-//                return roleId;
-//            }
-//        } catch (Exception e) {
-//            log.error("Failed to create WSO2 Role and bind permissions: {}", e.getMessage());
-//            throw new RuntimeException("WSO2 Role creation failed", e);
-//        }
-//        return null;
-//    }
 
     /**
      * Safe Rollback: DB දෝෂයකදී WSO2 Group එක මකා දැමීම
@@ -718,114 +655,128 @@ public class Wso2IdentityClientService {
         }
     }
 
-    //================================================
-//    public void registerScopeInWso2(String scopeCode, String displayName, String description) {
-//        String token = getAccessToken();
-//        String apiIdentifier = "https://api.topschicken.com/erp";
-//
-//        log.info("Registering scope '{}' to WSO2 API Resource...", scopeCode);
-//
-//        try {
-//            String searchUrl = UriComponentsBuilder.fromUriString(baseUrl + "/api/server/v1/api-resources")
-//                    .queryParam("filter", "identifier eq " + apiIdentifier)
-//                    .build()
-//                    .toUriString();
-//
-//            Map searchResponse = restClient.get()
-//                    .uri(searchUrl)
-//                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-//                    .retrieve()
-//                    .body(Map.class);
-//
-//            List resources = null;
-//            if (searchResponse != null && searchResponse.containsKey("apiResources")) {
-//                resources = (List) searchResponse.get("apiResources");
-//            }
-//
-//
-//            Map<String, Object> newScope = Map.of(
-//                    "name", scopeCode,
-//                    "displayName", displayName,
-//                    "description", description != null ? description : displayName
-//            );
-//
-//            if (resources == null || resources.isEmpty()) {
-//                Map<String, Object> createPayload = Map.of(
-//                        "name", "TopsChickenERP",
-//                        "type", "BUSINESS",
-//                        "identifier", apiIdentifier,
-//                        "displayName", "Tops Chicken ERP API",
-//                        "requiresAuthorization", true,
-//                        "scopes", List.of(newScope)
-//                );
-//                restClient.post()
-//                        .uri(baseUrl + "/api/server/v1/api-resources")
-//                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-//                        .contentType(MediaType.APPLICATION_JSON)
-//                        .body(createPayload)
-//                        .retrieve()
-//                        .toBodilessEntity();
-//                log.info("WSO2 API Resource created with initial scope '{}'", scopeCode);
-//            } else {
-//                String resourceId = ((Map<?, ?>) resources.getFirst()).get("id").toString();
-//                Map<String, Object> patchPayload = Map.of(
-//                        "addedScopes", List.of(newScope),
-//                        "removedScopes", List.of()
-//                );
-//                restClient.patch()
-//                        .uri(baseUrl + "/api/server/v1/api-resources/" + resourceId)
-//                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-//                        .contentType(MediaType.APPLICATION_JSON)
-//                        .body(patchPayload)
-//                        .retrieve()
-//                        .toBodilessEntity();
-//                log.info("Added new scope '{}' to existing WSO2 API Resource ID: {}", scopeCode, resourceId);
-//            }
-//        } catch (Exception e) {
-//            log.error("Failed to sync scope '{}' with WSO2: {}", scopeCode, e.getMessage());
-//            throw new RuntimeException("Failed to register permission in WSO2 Identity Server", e);
-//        }
-//    }
+    /**
+     * WSO2 Role එකක Permissions (Scopes) Update කිරීම (SCIM2 Roles V2 PATCH)
+     */
+    public void updateWso2RolePermissions(String wso2RoleId, List<String> permissions, String orgId) {
+        if (wso2RoleId == null || wso2RoleId.isBlank()) {
+            log.warn("Cannot update WSO2 Role permissions: wso2RoleId is null");
+            return;
+        }
 
-    //======================================================================
-//    public void registerScopeInWso2(String scopeCode, String displayName, String description) {
-//        String token = getAccessToken(); // මෙය Root Organization මට්ටමේ සිදුවිය යුත්තකි
-//        String apiIdentifier = "https://api.topschicken.com/erp";
-//
-//        log.info("Registering scope '{}' to WSO2 API Resource...", scopeCode);
-//
-//        // පළමුව API Resource එක සාදයි (දැනටමත් තිබේ නම් 409 Conflict එකක් එයි, අපි එය Ignore කරමු)
-//        try {
-//            Map<String, Object> createPayload = Map.of(
-//                    "identifier", apiIdentifier,
-//                    "displayName", "Tops Chicken ERP API",
-//                    "requiresAuthorization", true,
-//                    "scopes", List.of(Map.of(
-//                            "name", scopeCode,
-//                            "displayName", displayName,
-//                            "description", description != null ? description : displayName
-//                    ))
-//            );
-//            restClient.post()
-//                    .uri(baseUrl + "/api/server/v1/api-resources")
-//                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-//                    .contentType(MediaType.APPLICATION_JSON)
-//                    .body(createPayload)
-//                    .retrieve()
-//                    .toBodilessEntity();
-//            log.info("WSO2 API Resource created with initial scope '{}'", scopeCode);
-//
-//        } catch (Exception ex) {
-//            // දැනටමත් API Resource එක තිබේ නම් (409 Conflict), අපට අලුත් Scope එක එයට Update (PUT/PATCH) කළ යුතුය.
-//            log.info("API Resource exists. Adding new scope '{}' to existing WSO2 API Resource.", scopeCode);
-//            try {
-//                // WSO2 IS 7.x හි දැනට ඇති API Resource එකට අලුත් Scope එකක් එකතු කිරීම
-//                // Note: නිවැරදිම ක්‍රමය නම් API Resource ID එක සොයාගෙන ඊට අලුත් scopes යැවීමයි.
-//                // නමුත් මෙය සරල කිරීම සඳහා, Error එක අල්ලා ගැනීම පමණක් මෙහි සිදු කර ඇත.
-//                // සත්‍ය Production පරිසරයකදී GET /api-resources හරහා ID එක ගෙන PUT කළ යුතුය.
-//            } catch (Exception updateEx) {
-//                log.error("Failed to update WSO2 API Resource with new scope: {}", updateEx.getMessage());
-//            }
-//        }
-//    }
+        String token = getOrganizationToken(orgId);
+        log.info("Updating permissions for WSO2 Role ID: {} in Org: {}", wso2RoleId, (orgId != null ? orgId : "Root"));
+
+        String targetUrl = (orgId != null && !orgId.isBlank())
+                ? baseUrl + "/o/scim2/v2/Roles/" + wso2RoleId
+                : baseUrl + "/scim2/v2/Roles/" + wso2RoleId;
+
+        List<Map<String, String>> permissionsPayload = (permissions != null)
+                ? permissions.stream().map(p -> Map.of("value", p)).toList()
+                : List.of();
+
+        Map<String, Object> patchPayload = Map.of(
+                "schemas", List.of("urn:ietf:params:scim:api:messages:2.0:PatchOp"),
+                "Operations", List.of(
+                        Map.of(
+                                "op", "replace",
+                                "path", "permissions",
+                                "value", permissionsPayload
+                        )
+                )
+        );
+
+        restClient.patch()
+                .uri(targetUrl)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(patchPayload)
+                .retrieve()
+                .toBodilessEntity();
+
+        log.info("Successfully updated permissions for WSO2 Role ID: {}", wso2RoleId);
+    }
+
+    /**
+     * Safe Rollback: DB දෝෂයකදී WSO2 Role එක මකා දැමීම
+     */
+    public void deleteWso2RoleSafely(String wso2RoleId, String orgId) {
+        if (wso2RoleId == null || wso2RoleId.isBlank()) {
+            return;
+        }
+        try {
+            String token = getOrganizationToken(orgId);
+            String targetUrl = (orgId != null && !orgId.isBlank())
+                    ? baseUrl + "/o/scim2/v2/Roles/" + wso2RoleId
+                    : baseUrl + "/scim2/v2/Roles/" + wso2RoleId;
+
+            restClient.delete()
+                    .uri(targetUrl)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("Successfully rolled back WSO2 Role ID: {}", wso2RoleId);
+        } catch (Exception rollbackEx) {
+            log.error("CRITICAL: Failed to rollback WSO2 Role ID: {} in Org: {}. Manual cleanup required!",
+                    wso2RoleId, orgId, rollbackEx);
+        }
+    }
+
+    /**
+     * සේවකයෙකු (User) පරණ Job Designation Group එකෙන් ඉවත් කිරීම (SCIM2 PATCH)
+     */
+    public void removeUserFromWso2Group(String wso2GroupId, String wso2UserId, String orgId) {
+        if (wso2GroupId == null || wso2GroupId.isBlank() || wso2UserId == null || wso2UserId.isBlank()) {
+            log.warn("Skipping WSO2 Group removal: groupId or userId is null");
+            return;
+        }
+
+        String token = getOrganizationToken(orgId);
+        log.info("Removing WSO2 user '{}' from Group ID: {} in Org: {}", wso2UserId, wso2GroupId, orgId);
+
+        String targetUrl = (orgId != null && !orgId.isBlank())
+                ? baseUrl + "/o/scim2/Groups/" + wso2GroupId
+                : baseUrl + "/scim2/Groups/" + wso2GroupId;
+
+        Map<String, Object> patchPayload = Map.of(
+                "schemas", List.of("urn:ietf:params:scim:api:messages:2.0:PatchOp"),
+                "Operations", List.of(
+                        Map.of(
+                                "op", "remove",
+                                "path", "members[value eq \"" + wso2UserId + "\"]"
+                        )
+                )
+        );
+
+        restClient.patch()
+                .uri(targetUrl)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(patchPayload)
+                .retrieve()
+                .toBodilessEntity();
+
+        log.info("Successfully removed user '{}' from WSO2 Group ID: {}", wso2UserId, wso2GroupId);
+    }
+
+    /**
+     * Safe Rollback: DB දෝෂයකදී WSO2 Sub-Organization එක මකා දැමීම
+     */
+    public void deleteWso2OrganizationSafely(String wso2OrgId) {
+        if (wso2OrgId == null || wso2OrgId.isBlank()) {
+            return;
+        }
+        try {
+            String token = getAccessToken();
+            restClient.delete()
+                    .uri(baseUrl + "/api/server/v1/organizations/" + wso2OrgId)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("Successfully rolled back WSO2 Organization ID: {}", wso2OrgId);
+        } catch (Exception rollbackEx) {
+            log.error("CRITICAL: Failed to rollback WSO2 Organization ID: {}. Manual cleanup required!",
+                    wso2OrgId, rollbackEx);
+        }
+    }
 }

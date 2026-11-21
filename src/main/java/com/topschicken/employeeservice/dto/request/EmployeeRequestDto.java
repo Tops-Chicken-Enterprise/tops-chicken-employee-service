@@ -73,11 +73,10 @@ public class EmployeeRequestDto {
 
     private LocalDate resignedDate;
 
-
     private Integer biometricId;
 
-
     private Long farmId;
+
     private Long shedId;
 
     @NotNull(message = "Designation ID is mandatory")
@@ -85,16 +84,11 @@ public class EmployeeRequestDto {
 
     private Long supervisorId;
 
-    @Size(max = 100, message = "WSO2 User ID must not exceed 100 characters")
-    private String wso2UserId;
-
     @Size(max = 255, message = "Profile image URL must not exceed 255 characters")
     private String profileImageUrl;
 
-
     @Builder.Default
     private List<@Valid EmployeeAddressRequestDto> addresses = new ArrayList<>();;
-
 
     @Builder.Default
     private List<@Valid EmployeeBankAccountRequestDto> bankAccounts = new ArrayList<>();;

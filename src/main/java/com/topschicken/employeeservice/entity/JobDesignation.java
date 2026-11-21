@@ -37,6 +37,9 @@ public class JobDesignation extends BaseEntity {
     @Column(name = "wso2_group_id", length = 100)
     private String wso2GroupId;
 
+    @Column(name = "wso2_role_id", length = 100)
+    private String wso2RoleId;
+
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name = "job_designation_permission",

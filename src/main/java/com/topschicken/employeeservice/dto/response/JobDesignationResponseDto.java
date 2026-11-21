@@ -22,6 +22,7 @@ public class JobDesignationResponseDto {
     private String description;
     private List<String> permissions;
     private String wso2GroupId;
+    private String wso2RoleId;
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
