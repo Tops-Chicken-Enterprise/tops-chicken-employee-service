@@ -2,11 +2,11 @@ package com.topschicken.employeeservice.advisor;
 
 import com.topschicken.employeeservice.dto.response.ApiResponseDto;
 import com.topschicken.employeeservice.exception.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -61,12 +62,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponseDto<Void>> handleHttpMessageNotReadableException(
             HttpMessageNotReadableException ex) {
-        String message = "Malformed JSON request body or invalid value provided for an enum/date field.";
-        if (ex.getCause() != null) {
-            message = "Invalid format: " + ex.getCause().getMessage();
-        }
+        log.warn("Malformed JSON request: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(ApiResponseDto.error(HttpStatus.BAD_REQUEST.value(), message));
+                .body(ApiResponseDto.error(
+                        HttpStatus.BAD_REQUEST.value(),
+                        "Malformed JSON request body or invalid value provided for an enum/date field."
+                ));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -112,9 +113,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponseDto<Void>> handleGlobalException(Exception ex) {
+        log.error("Unhandled server exception occurred", ex);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponseDto.error(HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                        "An unexpected server error occurred."));
+                .body(ApiResponseDto.error(
+                        HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                        "An unexpected server error occurred."
+                ));
     }
 }

@@ -32,14 +32,12 @@ public class PermissionServiceImpl implements PermissionService {
             throw new DuplicateResourceException("Permission scope '" + scopeCode + "' already exists in local DB");
         }
 
-        // 1. WSO2 හි API Resource එකට මෙම Scope එක ඇතුළත් කිරීම (Syncing to WSO2)
         wso2IdentityClientService.registerScopeInWso2(
                 scopeCode,
                 requestDto.getDisplayName(),
                 requestDto.getDescription()
         );
 
-        // 2. Local DB හි සුරැකීම
         Permission permission = Permission.builder()
                 .scopeCode(scopeCode)
                 .displayName(requestDto.getDisplayName().trim())

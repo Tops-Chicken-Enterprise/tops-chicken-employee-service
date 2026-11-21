@@ -14,7 +14,9 @@ import lombok.NoArgsConstructor;
 public class PermissionRequestDto {
 
     @NotBlank(message = "Scope code is mandatory")
-    @Pattern(regexp = "^[a-z0-9_:]+$", message = "Scope code must contain only lowercase letters, numbers, underscores, and colons (e.g., employee:read)")
+    @Pattern(regexp = "^[a-z0-9_:]+$",
+            message = "Scope code must contain only lowercase letters, numbers, underscores, and colons (e.g., employee:read)"
+    )
     private String scopeCode;
 
     @NotBlank(message = "Display name is mandatory")

@@ -27,7 +27,6 @@ public class Wso2IdentityClientService {
 
     private static final String ROOT_TOKEN_CACHE_KEY = "wso2:token:root";
     private static final String SUB_ORG_TOKEN_CACHE_PREFIX = "wso2:token:org:";
-    private static final Duration TOKEN_TTL = Duration.ofSeconds(3000);
 
     @Value("${wso2.base-url}")
     private String baseUrl;
@@ -44,8 +43,11 @@ public class Wso2IdentityClientService {
     @Value("${wso2.client-secret}")
     private String clientSecret;
 
-    @Value("${wso2.ask-password-enabled:true}")
+    @Value("${wso2.ask-password-enabled}")
     private boolean askPasswordEnabled;
+
+    @Value("${wso2.api-resource.identifier}")
+    private String apiIdentifier;
 
     public Wso2IdentityClientService(
             @Qualifier("wso2RestClient") RestClient restClient,
@@ -54,9 +56,6 @@ public class Wso2IdentityClientService {
         this.redisTemplate = redisTemplate;
     }
 
-    /**
-     * 1. Root Access Token ලබා ගැනීම (Redis Caching සහිතව)
-     */
     private String getAccessToken() {
         try {
             String cachedToken = redisTemplate.opsForValue().get(ROOT_TOKEN_CACHE_KEY);
@@ -73,32 +72,23 @@ public class Wso2IdentityClientService {
         String credentials = clientId + ":" + clientSecret;
         String encodedCredentials = Base64.getEncoder().encodeToString(credentials.getBytes());
 
-//        String scopes = String.join(" ",
-//                "internal_user_mgt_create",
-//                "internal_user_mgt_view",
-//                "internal_user_mgt_list",
-//                "internal_user_mgt_update",
-//                "internal_user_mgt_delete",
-//                "internal_org_user_mgt_create",
-//                "internal_org_user_mgt_view",
-//                "internal_org_user_mgt_list",
-//                "internal_org_user_mgt_update",
-//                "internal_org_user_mgt_delete",
-//                "internal_organization_create",
-//                "internal_organization_view",
-//                "internal_organization_update",
-//                "internal_organization_delete"
-//        );
-
         String scopes = String.join(" ",
-                "internal_user_mgt_create", "internal_user_mgt_view", "internal_user_mgt_list", "internal_user_mgt_update", "internal_user_mgt_delete",
-                "internal_group_mgt_create", "internal_group_mgt_view", "internal_group_mgt_update", "internal_group_mgt_delete",
-                "internal_org_user_mgt_create", "internal_org_user_mgt_view", "internal_org_user_mgt_list", "internal_org_user_mgt_update", "internal_org_user_mgt_delete",
-                "internal_org_group_mgt_create", "internal_org_group_mgt_view", "internal_org_group_mgt_update", "internal_org_group_mgt_delete",
-                "internal_org_role_mgt_create", "internal_org_role_mgt_view", "internal_org_role_mgt_update", "internal_org_role_mgt_delete",
-                "internal_org_role_mgt_groups_update", "internal_org_role_mgt_permissions_update", "internal_org_role_mgt_users_update",
-                "internal_organization_create", "internal_organization_view", "internal_organization_update", "internal_organization_delete",
-                "internal_api_resource_create", "internal_api_resource_view", "internal_api_resource_update", "internal_api_resource_delete", "internal_org_api_resource_view"
+                "internal_user_mgt_create", "internal_user_mgt_view", "internal_user_mgt_list",
+                "internal_user_mgt_update", "internal_user_mgt_delete",
+                "internal_group_mgt_create", "internal_group_mgt_view", "internal_group_mgt_update",
+                "internal_group_mgt_delete",
+                "internal_org_user_mgt_create", "internal_org_user_mgt_view", "internal_org_user_mgt_list",
+                "internal_org_user_mgt_update", "internal_org_user_mgt_delete",
+                "internal_org_group_mgt_create", "internal_org_group_mgt_view",
+                "internal_org_group_mgt_update", "internal_org_group_mgt_delete",
+                "internal_org_role_mgt_create", "internal_org_role_mgt_view",
+                "internal_org_role_mgt_update", "internal_org_role_mgt_delete",
+                "internal_org_role_mgt_groups_update", "internal_org_role_mgt_permissions_update",
+                "internal_org_role_mgt_users_update",
+                "internal_organization_create", "internal_organization_view",
+                "internal_organization_update", "internal_organization_delete",
+                "internal_api_resource_create", "internal_api_resource_view",
+                "internal_api_resource_update", "internal_api_resource_delete", "internal_org_api_resource_view"
         );
 
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
@@ -116,15 +106,12 @@ public class Wso2IdentityClientService {
         if (response != null && response.containsKey("access_token")) {
             String accessToken = response.get("access_token").toString();
             log.info("WSO2 Root Token Received and Cached!");
-            cacheTokenSafely(ROOT_TOKEN_CACHE_KEY, accessToken);
+            cacheTokenSafely(ROOT_TOKEN_CACHE_KEY, accessToken,response);
             return accessToken;
         }
         throw new RuntimeException("Failed to retrieve WSO2 access token");
     }
 
-    /**
-     * 2. Sub-Organization Token ලබා ගැනීම (Redis Caching සහිතව)
-     */
     private String getOrganizationToken(String targetOrgId) {
         if (targetOrgId == null || targetOrgId.isBlank()) {
             return getAccessToken();
@@ -147,14 +134,15 @@ public class Wso2IdentityClientService {
         String credentials = clientId + ":" + clientSecret;
         String encodedCredentials = Base64.getEncoder().encodeToString(credentials.getBytes());
 
-//        String orgScopes = "internal_org_user_mgt_create internal_org_user_mgt_view internal_org_user_mgt_list " +
-//                "internal_org_user_mgt_update internal_org_user_mgt_delete";
-
         String orgScopes = String.join(" ",
-                "internal_org_user_mgt_create", "internal_org_user_mgt_view", "internal_org_user_mgt_list", "internal_org_user_mgt_update", "internal_org_user_mgt_delete",
-                "internal_org_group_mgt_create", "internal_org_group_mgt_view", "internal_org_group_mgt_update", "internal_org_group_mgt_delete",
-                "internal_org_role_mgt_create", "internal_org_role_mgt_view", "internal_org_role_mgt_update", "internal_org_role_mgt_delete",
-                "internal_org_role_mgt_groups_update", "internal_org_role_mgt_permissions_update", "internal_org_role_mgt_users_update"
+                "internal_org_user_mgt_create", "internal_org_user_mgt_view", "internal_org_user_mgt_list",
+                "internal_org_user_mgt_update", "internal_org_user_mgt_delete",
+                "internal_org_group_mgt_create", "internal_org_group_mgt_view", "internal_org_group_mgt_update",
+                "internal_org_group_mgt_delete",
+                "internal_org_role_mgt_create", "internal_org_role_mgt_view", "internal_org_role_mgt_update",
+                "internal_org_role_mgt_delete",
+                "internal_org_role_mgt_groups_update", "internal_org_role_mgt_permissions_update",
+                "internal_org_role_mgt_users_update"
         );
 
         MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
@@ -174,27 +162,28 @@ public class Wso2IdentityClientService {
         if (response != null && response.containsKey("access_token")) {
             String orgToken = response.get("access_token").toString();
             log.info("Successfully switched token to Sub-Org and Cached!");
-            cacheTokenSafely(cacheKey, orgToken);
+            cacheTokenSafely(cacheKey, orgToken, response);
             return orgToken;
         }
         throw new RuntimeException("Failed to switch token for organization: " + targetOrgId);
     }
 
-    private void cacheTokenSafely(String key, String token) {
+    private void cacheTokenSafely(String key, String token, Map<?, ?> tokenResponse) {
         try {
-            redisTemplate.opsForValue().set(key, token, TOKEN_TTL);
+            long ttlSeconds = 3000;
+            if (tokenResponse != null && tokenResponse.containsKey("expires_in")) {
+                long expiresIn = Long.parseLong(tokenResponse.get("expires_in").toString());
+                ttlSeconds = Math.max(60, expiresIn - 60);
+            }
+            redisTemplate.opsForValue().set(key, token, Duration.ofSeconds(ttlSeconds));
         } catch (Exception e) {
             log.warn("Failed to write token to Redis cache: {}", e.getMessage());
         }
     }
 
-    /**
-     * 3. SCIM Filter Injection වලින් ආරක්ෂිතව User සෙවීම
-     */
     public String findUserByUsername(String username, String orgId) {
         String token = getOrganizationToken(orgId);
 
-        // SCIM Injection වැළැක්වීමට quotes සහ විශේෂ ලකුණු ඉවත් කරයි
         String sanitizedUsername = username.replace("\"", "").replace("\\", "").trim();
 
         String baseScimUrl = (orgId != null && !orgId.isBlank())
@@ -223,9 +212,6 @@ public class Wso2IdentityClientService {
         return null;
     }
 
-    /**
-     * 4. Email Invitation Link (askPassword) + Secure Random Password මගින් User සෑදීම
-     */
     public String createWso2User(String empCode, String email, String nic, String firstName, String lastName,
                                  String organization, String contactNumber, String orgId, String tempPassword) {
         String token = getOrganizationToken(orgId);
@@ -241,7 +227,6 @@ public class Wso2IdentityClientService {
         ));
         payload.put("userName", empCode);
 
-        // WSO2 Password Policy (min 8 chars, upper, lower, digit, special) තෘප්තිමත් කරන Secure Random Password එකක්
         String finalPassword = (tempPassword != null && !tempPassword.isBlank())
                 ? tempPassword
                 : generateSecureRandomPassword();
@@ -260,21 +245,18 @@ public class Wso2IdentityClientService {
             )));
         }
 
-        // 1. Standard Enterprise Schema (Organization නම සඳහා)
         if (organization != null && !organization.isBlank()) {
             payload.put("urn:ietf:params:scim:schemas:extension:enterprise:2.0:User", Map.of(
                     "organization", organization
             ));
         }
 
-        // 2. WSO2 System Schema (AskPassword Email Link Flow සඳහා)
         if (askPasswordEnabled) {
             payload.put("urn:scim:wso2:schema", Map.of(
                     "askPassword", "true"
             ));
         }
 
-        // 3. Custom Schema (NIC සඳහා)
         if (nic != null && !nic.isBlank()) {
             payload.put("urn:scim:schemas:extension:custom:User", Map.of(
                     "nic", nic
@@ -301,9 +283,6 @@ public class Wso2IdentityClientService {
         throw new RuntimeException("Failed to create user in WSO2");
     }
 
-    /**
-     * WSO2 Password Policy එකට ගැලපෙන ආරක්ෂිත Random Password එකක් ජනනය කිරීම
-     */
     private String generateSecureRandomPassword() {
         String upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         String lower = "abcdefghijklmnopqrstuvwxyz";
@@ -314,22 +293,17 @@ public class Wso2IdentityClientService {
         java.security.SecureRandom random = new java.security.SecureRandom();
         StringBuilder sb = new StringBuilder(12);
 
-        // අනිවාර්යයෙන්ම තිබිය යුතු අක්ෂර වර්ග 4න් එක බැගින් මුලට එකතු කිරීම
         sb.append(upper.charAt(random.nextInt(upper.length())));
         sb.append(lower.charAt(random.nextInt(lower.length())));
         sb.append(digits.charAt(random.nextInt(digits.length())));
         sb.append(special.charAt(random.nextInt(special.length())));
 
-        // ඉතිරි අක්ෂර 8 අහඹු ලෙස තෝරා ගැනීම
         for (int i = 4; i < 12; i++) {
             sb.append(allChars.charAt(random.nextInt(allChars.length())));
         }
         return sb.toString();
     }
 
-    /**
-     * 5. සේවකයාගේ තොරතුරු සහ Active/Inactive තත්ත්වය WSO2 හි Update කිරීම (SCIM PUT/PATCH)
-     */
     public void updateWso2User(String wso2UserId, String email, String nic, String firstName, String lastName,
                                String organization, String contactNumber, boolean isActive, String orgId) {
         if (wso2UserId == null || wso2UserId.isBlank()) {
@@ -352,7 +326,10 @@ public class Wso2IdentityClientService {
                                 "value", Map.of(
                                         "name", Map.of("givenName", firstName, "familyName", lastName),
                                         "emails", List.of(Map.of("primary", true, "value", email)),
-                                        "phoneNumbers", List.of(Map.of("type", "mobile", "value", contactNumber != null ? contactNumber : "")),
+                                        "phoneNumbers", List.of(Map.of(
+                                                "type", "mobile", "value",
+                                                contactNumber != null ? contactNumber : "")
+                                        ),
                                         "active", isActive,
                                         "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User", Map.of(
                                                 "organization", organization != null ? organization : ""
@@ -376,9 +353,6 @@ public class Wso2IdentityClientService {
         log.info("Successfully updated WSO2 user ID: {}", wso2UserId);
     }
 
-    /**
-     * 6. Safe Rollback - මෙහිදී Exception එකක් ආවත් මුල් DB Exception එක යටපත් (Mask) නොවේ!
-     */
     public void deleteWso2UserSafely(String wso2UserId, String orgId) {
         if (wso2UserId == null || wso2UserId.isBlank()) {
             return;
@@ -396,7 +370,6 @@ public class Wso2IdentityClientService {
                     .toBodilessEntity();
             log.info("Successfully rolled back (deleted) WSO2 user ID: {}", wso2UserId);
         } catch (Exception rollbackEx) {
-            // මුල් Database Error එක ආරක්ෂා කර ගැනීම සඳහා මෙහිදී Error එක Log කරනවා පමණි (Throw කරන්නේ නැත)
             log.error("CRITICAL: Failed to rollback WSO2 user ID: {} in Org: {}. Manual cleanup required!",
                     wso2UserId, orgId, rollbackEx);
         }
@@ -428,9 +401,6 @@ public class Wso2IdentityClientService {
         throw new RuntimeException("Failed to create organization in WSO2");
     }
 
-    /**
-     * JobDesignation එක සඳහා WSO2 Sub-Organization තුළ SCIM2 Group එකක් සෑදීම
-     */
     public String createWso2Group(String designationTitle, String orgId) {
         String token = getOrganizationToken(orgId);
         String formattedGroupName = designationTitle.trim().replaceAll("\\s+", "_");
@@ -462,10 +432,9 @@ public class Wso2IdentityClientService {
         throw new RuntimeException("Failed to create WSO2 SCIM2 Group for designation: " + designationTitle);
     }
 
-    /**
-     * WSO2 Role එකක් සාදා ඊට අදාළ Permissions (Scopes) සහ Group එක Bind කිරීම (SCIM2 Roles V2)
-     */
-    public String createWso2RoleAndBindToGroup(String roleName, List<String> permissions, String groupId, String orgId) {
+    public String createWso2RoleAndBindToGroup(
+            String roleName, List<String> permissions, String groupId, String orgId
+    ) {
         if (permissions == null || permissions.isEmpty()) {
             log.info("No permissions provided for role {}. Skipping role creation.", roleName);
             return null;
@@ -473,18 +442,16 @@ public class Wso2IdentityClientService {
 
         String token = getOrganizationToken(orgId);
         String formattedRoleName = roleName.trim().replaceAll("\\s+", "_") + "_ROLE";
-        log.info("Creating WSO2 Role '{}' and binding to Group ID: {} in Org: {}", formattedRoleName, groupId, (orgId != null ? orgId : "Root"));
+        log.info("Creating WSO2 Role '{}' and binding to Group ID: {} in Org: {}",
+                formattedRoleName, groupId, (orgId != null ? orgId : "Root"));
 
-        // නිවැරදි WSO2 IS 7.3.0 SCIM2 Roles V2 Endpoint එක
         String targetUrl = (orgId != null && !orgId.isBlank())
                 ? baseUrl + "/o/scim2/v2/Roles"
                 : baseUrl + "/scim2/v2/Roles";
 
-
         List<Map<String, String>> groupsPayload = List.of(
                 Map.of("value", groupId)
         );
-
 
         List<Map<String, String>> permissionsPayload = permissions.stream()
                 .map(permission -> Map.of("value", permission))
@@ -518,9 +485,6 @@ public class Wso2IdentityClientService {
         return null;
     }
 
-    /**
-     * Safe Rollback: DB දෝෂයකදී WSO2 Group එක මකා දැමීම
-     */
     public void deleteWso2GroupSafely(String wso2GroupId, String orgId) {
         if (wso2GroupId == null || wso2GroupId.isBlank()) {
             return;
@@ -543,9 +507,6 @@ public class Wso2IdentityClientService {
         }
     }
 
-    /**
-     * සේවකයෙකු (User) අදාළ Job Designation Group එකට ඇතුළත් කිරීම (SCIM2 PATCH)
-     */
     public void addUserToWso2Group(String wso2GroupId, String wso2UserId, String empCode, String orgId) {
         if (wso2GroupId == null || wso2GroupId.isBlank() || wso2UserId == null || wso2UserId.isBlank()) {
             log.warn("Skipping WSO2 Group assignment: groupId or userId is null");
@@ -586,13 +547,8 @@ public class Wso2IdentityClientService {
         log.info("Successfully added user '{}' to WSO2 Group ID: {}", empCode, wso2GroupId);
     }
 
-    /**
-     * WSO2 හි ERP API Resource එකට අලුත් Scope එකක් (Permission එකක්) ඇතුළත් කිරීම
-     */
-
     public void registerScopeInWso2(String scopeCode, String displayName, String description) {
         String token = getAccessToken();
-        String apiIdentifier = "https://api.topschicken.com/erp";
 
         log.info("Registering scope '{}' to WSO2 API Resource...", scopeCode);
 
@@ -655,9 +611,6 @@ public class Wso2IdentityClientService {
         }
     }
 
-    /**
-     * WSO2 Role එකක Permissions (Scopes) Update කිරීම (SCIM2 Roles V2 PATCH)
-     */
     public void updateWso2RolePermissions(String wso2RoleId, List<String> permissions, String orgId) {
         if (wso2RoleId == null || wso2RoleId.isBlank()) {
             log.warn("Cannot update WSO2 Role permissions: wso2RoleId is null");
@@ -697,9 +650,6 @@ public class Wso2IdentityClientService {
         log.info("Successfully updated permissions for WSO2 Role ID: {}", wso2RoleId);
     }
 
-    /**
-     * Safe Rollback: DB දෝෂයකදී WSO2 Role එක මකා දැමීම
-     */
     public void deleteWso2RoleSafely(String wso2RoleId, String orgId) {
         if (wso2RoleId == null || wso2RoleId.isBlank()) {
             return;
@@ -722,9 +672,6 @@ public class Wso2IdentityClientService {
         }
     }
 
-    /**
-     * සේවකයෙකු (User) පරණ Job Designation Group එකෙන් ඉවත් කිරීම (SCIM2 PATCH)
-     */
     public void removeUserFromWso2Group(String wso2GroupId, String wso2UserId, String orgId) {
         if (wso2GroupId == null || wso2GroupId.isBlank() || wso2UserId == null || wso2UserId.isBlank()) {
             log.warn("Skipping WSO2 Group removal: groupId or userId is null");
@@ -759,9 +706,6 @@ public class Wso2IdentityClientService {
         log.info("Successfully removed user '{}' from WSO2 Group ID: {}", wso2UserId, wso2GroupId);
     }
 
-    /**
-     * Safe Rollback: DB දෝෂයකදී WSO2 Sub-Organization එක මකා දැමීම
-     */
     public void deleteWso2OrganizationSafely(String wso2OrgId) {
         if (wso2OrgId == null || wso2OrgId.isBlank()) {
             return;
@@ -780,9 +724,6 @@ public class Wso2IdentityClientService {
         }
     }
 
-    /**
-     * WSO2 Sub-Organization එකේ Name, Description සහ Status (ACTIVE / DISABLED) Update කිරීම
-     */
     public void updateWso2Organization(String wso2OrgId, String orgName, String description, boolean isActive) {
         if (wso2OrgId == null || wso2OrgId.isBlank()) {
             log.warn("Cannot update WSO2 organization: wso2OrgId is null");
@@ -796,7 +737,8 @@ public class Wso2IdentityClientService {
 
         List<Map<String, Object>> patchOperations = List.of(
                 Map.of("operation", "REPLACE", "path", "/name", "value", orgName),
-                Map.of("operation", "REPLACE", "path", "/description", "value", description != null ? description : orgName),
+                Map.of("operation", "REPLACE", "path", "/description", "value",
+                        description != null ? description : orgName),
                 Map.of("operation", "REPLACE", "path", "/status", "value", statusValue)
         );
 

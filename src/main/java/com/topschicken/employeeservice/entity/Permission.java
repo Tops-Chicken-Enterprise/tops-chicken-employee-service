@@ -17,10 +17,10 @@ public class Permission extends BaseEntity {
     private Long id;
 
     @Column(name = "scope_code", nullable = false, unique = true, length = 100)
-    private String scopeCode; // e.g., "employee:read"
+    private String scopeCode;
 
     @Column(name = "display_name", nullable = false, length = 100)
-    private String displayName; // e.g., "Read Employee Details"
+    private String displayName;
 
     @Column(name = "description", length = 255)
     private String description;

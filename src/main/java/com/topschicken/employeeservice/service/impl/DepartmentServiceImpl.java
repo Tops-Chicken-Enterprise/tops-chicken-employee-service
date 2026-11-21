@@ -62,7 +62,10 @@ public class DepartmentServiceImpl implements DepartmentService {
             department.setWso2OrgId(wso2OrgId);
 
             Department savedDepartment = departmentRepository.saveAndFlush(department);
-            log.info("Department created successfully with ID: {} and WSO2 Org ID: {}", savedDepartment.getId(), wso2OrgId);
+            log.info(
+                    "Department created successfully with ID: {} and WSO2 Org ID: {}",
+                    savedDepartment.getId(), wso2OrgId
+            );
 
             return departmentMapper.toResponseDto(savedDepartment);
         } catch (Exception ex) {
