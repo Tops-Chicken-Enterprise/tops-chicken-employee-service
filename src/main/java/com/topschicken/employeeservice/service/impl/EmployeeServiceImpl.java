@@ -1,6 +1,7 @@
 package com.topschicken.employeeservice.service.impl;
 
 import com.topschicken.employeeservice.dto.request.EmployeeRequestDto;
+import com.topschicken.employeeservice.dto.request.EmployeeTransferRequestDto;
 import com.topschicken.employeeservice.dto.response.EmployeeResponseDto;
 import com.topschicken.employeeservice.dto.response.paginate.PageMetaDataDto;
 import com.topschicken.employeeservice.dto.response.paginate.PagedResponseDto;
@@ -240,6 +241,113 @@ public class EmployeeServiceImpl implements EmployeeService {
         }
 
         return employeeMapper.toResponseDto(updatedEmployee);
+    }
+
+    @Override
+    public EmployeeResponseDto transferEmployee(Long id, EmployeeTransferRequestDto requestDto) {
+        log.info("Initiating cross-department transfer for employee ID: {} to designation ID: {}",
+                id, requestDto.getNewDesignationId());
+
+        Employee employee = employeeRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee not found with ID: " + id));
+
+        if (requestDto.getNewSupervisorId() != null && requestDto.getNewSupervisorId().equals(id)) {
+            throw new BusinessValidationException("An employee cannot be their own supervisor");
+        }
+
+        JobDesignation oldDesignation = employee.getDesignation();
+        JobDesignation newDesignation = jobDesignationRepository.findByIdWithDepartment(
+                requestDto.getNewDesignationId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "New designation not found with ID: " + requestDto.getNewDesignationId())
+                );
+
+        if (Boolean.FALSE.equals(newDesignation.getIsActive())
+                || Boolean.FALSE.equals(newDesignation.getDepartment().getIsActive())) {
+            throw new BusinessValidationException("Cannot transfer employee to an inactive designation or department");
+        }
+
+        String oldOrgId = oldDesignation.getDepartment().getWso2OrgId();
+        String newOrgId = newDesignation.getDepartment().getWso2OrgId();
+
+        if (Objects.equals(oldOrgId, newOrgId)) {
+            throw new BusinessValidationException(
+                    "Employee is already in this department. Use standard update to change" +
+                            " designation within the same department."
+            );
+        }
+
+        String oldWso2UserId = employee.getWso2UserId();
+
+        String existingInNewOrg = wso2IdentityClientService.findUserByUsername(employee.getEmpCode(), newOrgId);
+        if (existingInNewOrg != null) {
+            throw new DuplicateResourceException("Employee code already exists in the target WSO2 organization");
+        }
+
+        String newWso2UserId = wso2IdentityClientService.createWso2User(
+                employee.getEmpCode(),
+                employee.getEmail(),
+                employee.getNic(),
+                employee.getFirstName(),
+                employee.getLastName(),
+                newDesignation.getDepartment().getName(),
+                employee.getContactNumber(),
+                newOrgId,
+                null
+        );
+
+        EmployeeResponseDto responseDto;
+        try {
+            if (newDesignation.getWso2GroupId() != null && !newDesignation.getWso2GroupId().isBlank()) {
+                wso2IdentityClientService.addUserToWso2Group(
+                        newDesignation.getWso2GroupId(),
+                        newWso2UserId,
+                        employee.getEmpCode(),
+                        newOrgId
+                );
+            }
+
+            assert transactionTemplate.getTransactionManager() != null;
+            TransactionTemplate requiresNewTemplate =
+                    new TransactionTemplate(transactionTemplate.getTransactionManager());
+            requiresNewTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+            responseDto = requiresNewTemplate.execute(status -> {
+                Employee empToUpdate = employeeRepository.findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Employee not found with ID: " + id));
+
+                empToUpdate.setDesignation(newDesignation);
+                empToUpdate.setWso2UserId(newWso2UserId);
+
+                if (requestDto.getNewFarmId() != null) {
+                    empToUpdate.setFarmId(requestDto.getNewFarmId());
+                }
+                if (requestDto.getNewShedId() != null) {
+                    empToUpdate.setShedId(requestDto.getNewShedId());
+                }
+                if (requestDto.getNewSupervisorId() != null) {
+                    Employee supervisor = employeeRepository.findById(requestDto.getNewSupervisorId())
+                            .orElseThrow(() -> new ResourceNotFoundException("New supervisor not found"));
+                    empToUpdate.setSupervisor(supervisor);
+                }
+
+                Employee saved = employeeRepository.saveAndFlush(empToUpdate);
+                return employeeMapper.toResponseDto(saved);
+            });
+
+        } catch (Exception ex) {
+            log.error("Transfer failed for employee ID: {}. Rolling back new WSO2 user ID: {} in Org: {}",
+                    id, newWso2UserId, newOrgId, ex);
+            wso2IdentityClientService.deleteWso2UserSafely(newWso2UserId, newOrgId);
+            throw ex;
+        }
+
+        if (oldWso2UserId != null && !oldWso2UserId.isBlank()) {
+            wso2IdentityClientService.deleteWso2UserSafely(oldWso2UserId, oldOrgId);
+        }
+
+        log.info("Successfully transferred employee ID: {} from Org '{}' to Org '{}'", id, oldOrgId, newOrgId);
+        return responseDto;
     }
 
     @Override
