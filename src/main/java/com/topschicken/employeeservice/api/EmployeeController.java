@@ -1,6 +1,7 @@
 package com.topschicken.employeeservice.api;
 
 import com.topschicken.employeeservice.dto.request.EmployeeRequestDto;
+import com.topschicken.employeeservice.dto.request.EmployeeTransferRequestDto;
 import com.topschicken.employeeservice.dto.response.ApiResponseDto;
 import com.topschicken.employeeservice.dto.response.EmployeeResponseDto;
 import com.topschicken.employeeservice.dto.response.paginate.PagedResponseDto;
@@ -64,6 +65,18 @@ public class EmployeeController {
         EmployeeResponseDto response = employeeService.updateEmployee(id, requestDto);
         return ResponseEntity.ok(ApiResponseDto.success(HttpStatus.OK.value(),
                 "Employee updated successfully", response)
+        );
+    }
+
+    @PostMapping("/{id}/transfer")
+    public ResponseEntity<ApiResponseDto<EmployeeResponseDto>> transferEmployee(
+            @PathVariable @Positive(message = "Employee ID must be positive") Long id,
+            @Valid @RequestBody EmployeeTransferRequestDto requestDto) {
+        log.info("REST request to transfer employee ID: {} to designation ID: {}",
+                id, requestDto.getNewDesignationId());
+        EmployeeResponseDto response = employeeService.transferEmployee(id, requestDto);
+        return ResponseEntity.ok(ApiResponseDto.success(HttpStatus.OK.value(),
+                "Employee transferred to new department successfully", response)
         );
     }
 
