@@ -779,4 +779,35 @@ public class Wso2IdentityClientService {
                     wso2OrgId, rollbackEx);
         }
     }
+
+    /**
+     * WSO2 Sub-Organization එකේ Name, Description සහ Status (ACTIVE / DISABLED) Update කිරීම
+     */
+    public void updateWso2Organization(String wso2OrgId, String orgName, String description, boolean isActive) {
+        if (wso2OrgId == null || wso2OrgId.isBlank()) {
+            log.warn("Cannot update WSO2 organization: wso2OrgId is null");
+            return;
+        }
+
+        String token = getAccessToken();
+        log.info("Updating WSO2 Organization ID: {} (Name: '{}', Active: {})", wso2OrgId, orgName, isActive);
+
+        String statusValue = isActive ? "ACTIVE" : "DISABLED";
+
+        List<Map<String, Object>> patchOperations = List.of(
+                Map.of("operation", "REPLACE", "path", "/name", "value", orgName),
+                Map.of("operation", "REPLACE", "path", "/description", "value", description != null ? description : orgName),
+                Map.of("operation", "REPLACE", "path", "/status", "value", statusValue)
+        );
+
+        restClient.patch()
+                .uri(baseUrl + "/api/server/v1/organizations/" + wso2OrgId)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(patchOperations)
+                .retrieve()
+                .toBodilessEntity();
+
+        log.info("Successfully updated WSO2 Organization ID: {}", wso2OrgId);
+    }
 }

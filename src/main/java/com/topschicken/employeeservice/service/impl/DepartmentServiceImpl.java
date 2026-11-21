@@ -117,6 +117,14 @@ public class DepartmentServiceImpl implements DepartmentService {
         department.setName(normalizedName);
 
         Department updatedDepartment = departmentRepository.saveAndFlush(department);
+        if (updatedDepartment.getWso2OrgId() != null && !updatedDepartment.getWso2OrgId().isBlank()) {
+            wso2IdentityClientService.updateWso2Organization(
+                    updatedDepartment.getWso2OrgId(),
+                    updatedDepartment.getName(),
+                    updatedDepartment.getDescription(),
+                    Boolean.TRUE.equals(updatedDepartment.getIsActive())
+            );
+        }
         log.info("Department updated successfully with ID: {}", updatedDepartment.getId());
 
         return departmentMapper.toResponseDto(updatedDepartment);
@@ -136,6 +144,15 @@ public class DepartmentServiceImpl implements DepartmentService {
 
         department.setIsActive(isActive);
         Department updatedDepartment = departmentRepository.saveAndFlush(department);
+
+        if (updatedDepartment.getWso2OrgId() != null && !updatedDepartment.getWso2OrgId().isBlank()) {
+            wso2IdentityClientService.updateWso2Organization(
+                    updatedDepartment.getWso2OrgId(),
+                    updatedDepartment.getName(),
+                    updatedDepartment.getDescription(),
+                    isActive
+            );
+        }
 
         return departmentMapper.toResponseDto(updatedDepartment);
     }
