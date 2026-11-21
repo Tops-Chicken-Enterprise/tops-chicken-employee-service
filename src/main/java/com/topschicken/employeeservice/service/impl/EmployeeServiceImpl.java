@@ -7,6 +7,7 @@ import com.topschicken.employeeservice.dto.response.paginate.PagedResponseDto;
 import com.topschicken.employeeservice.entity.Employee;
 import com.topschicken.employeeservice.entity.JobDesignation;
 import com.topschicken.employeeservice.entity.enums.EmploymentStatus;
+import com.topschicken.employeeservice.exception.BusinessValidationException;
 import com.topschicken.employeeservice.exception.DuplicateResourceException;
 import com.topschicken.employeeservice.exception.ResourceNotFoundException;
 import com.topschicken.employeeservice.repository.EmployeeRepository;
@@ -22,6 +23,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.Objects;
 
 @Slf4j
 @Service
@@ -47,6 +50,10 @@ public class EmployeeServiceImpl implements EmployeeService {
         }
         if (employeeRepository.existsByEmailIgnoreCase(requestDto.getEmail())) {
             throw new DuplicateResourceException("Email already exists in Local DB");
+        }
+        if (requestDto.getEpfNumber() != null && !requestDto.getEpfNumber().isBlank()
+                && employeeRepository.existsByEpfNumber(requestDto.getEpfNumber().trim())) {
+            throw new DuplicateResourceException("EPF number already exists in Local DB");
         }
 
         JobDesignation designation = jobDesignationRepository.findById(requestDto.getDesignationId())
@@ -155,13 +162,27 @@ public class EmployeeServiceImpl implements EmployeeService {
         if (employeeRepository.existsByEmailIgnoreCaseAndIdNot(requestDto.getEmail(), id)) {
             throw new DuplicateResourceException("Email already exists");
         }
+        if (requestDto.getEpfNumber() != null && !requestDto.getEpfNumber().isBlank()
+                && employeeRepository.existsByEpfNumberAndIdNot(requestDto.getEpfNumber().trim(), id)) {
+            throw new DuplicateResourceException("EPF number already exists");
+        }
 
         JobDesignation oldDesignation = employee.getDesignation();
         JobDesignation newDesignation = oldDesignation;
+        boolean designationChanged = !oldDesignation.getId().equals(requestDto.getDesignationId());
 
-        if (!oldDesignation.getId().equals(requestDto.getDesignationId())) {
+        if (designationChanged) {
             newDesignation = jobDesignationRepository.findById(requestDto.getDesignationId())
                     .orElseThrow(() -> new ResourceNotFoundException("Designation not found"));
+
+            // වෙනත් Department (WSO2 Sub-Org) එකකට මාරු කිරීම අවහිර කිරීම
+            String oldOrgId = oldDesignation.getDepartment().getWso2OrgId();
+            String newOrgId = newDesignation.getDepartment().getWso2OrgId();
+            if (!Objects.equals(oldOrgId, newOrgId)) {
+                throw new BusinessValidationException(
+                        "Cannot change employee to a designation in a different department/organization via standard update"
+                );
+            }
             employee.setDesignation(newDesignation);
         }
 
@@ -174,10 +195,12 @@ public class EmployeeServiceImpl implements EmployeeService {
 
         employeeMapper.updateEntityFromDto(requestDto, employee);
         Employee updatedEmployee = employeeRepository.saveAndFlush(employee);
+
         try {
             String wso2OrgId = newDesignation.getDepartment().getWso2OrgId();
             boolean isActive = updatedEmployee.getEmploymentStatus() == EmploymentStatus.ACTIVE;
 
+            // 1. WSO2 User profile update කිරීම
             wso2IdentityClientService.updateWso2User(
                     updatedEmployee.getWso2UserId(),
                     updatedEmployee.getEmail(),
@@ -189,14 +212,93 @@ public class EmployeeServiceImpl implements EmployeeService {
                     isActive,
                     wso2OrgId
             );
+
+            // 2. Designation එක වෙනස් වුණා නම් පරණ Group එකෙන් අයින් කරලා අලුත් Group එකට දැමීම
+            if (designationChanged && updatedEmployee.getWso2UserId() != null) {
+                if (oldDesignation.getWso2GroupId() != null && !oldDesignation.getWso2GroupId().isBlank()) {
+                    wso2IdentityClientService.removeUserFromWso2Group(
+                            oldDesignation.getWso2GroupId(),
+                            updatedEmployee.getWso2UserId(),
+                            wso2OrgId
+                    );
+                }
+                if (newDesignation.getWso2GroupId() != null && !newDesignation.getWso2GroupId().isBlank()) {
+                    wso2IdentityClientService.addUserToWso2Group(
+                            newDesignation.getWso2GroupId(),
+                            updatedEmployee.getWso2UserId(),
+                            updatedEmployee.getEmpCode(),
+                            wso2OrgId
+                    );
+                }
+            }
+
             log.info("Successfully synced employee update to WSO2 for ID: {}", id);
         } catch (Exception e) {
             log.error("Failed to sync employee update to WSO2 IS for ID: {}. Local DB update was successful.", id, e);
-            // Depending on strictness, you can throw or log. Logging allows DB to update while flagging WSO2 sync issue.
         }
 
         return employeeMapper.toResponseDto(updatedEmployee);
     }
+
+    //==================================================
+
+//    @Override
+//    @Transactional
+//    public EmployeeResponseDto updateEmployee(Long id, EmployeeRequestDto requestDto) {
+//        Employee employee = employeeRepository.findById(id)
+//                .orElseThrow(() -> new ResourceNotFoundException("Employee not found with ID: " + id));
+//
+//        if (requestDto.getSupervisorId() != null && requestDto.getSupervisorId().equals(id)) {
+//            throw new IllegalArgumentException("An employee cannot be their own supervisor");
+//        }
+//        if (employeeRepository.existsByNicAndIdNot(requestDto.getNic(), id)) {
+//            throw new DuplicateResourceException("NIC already exists");
+//        }
+//        if (employeeRepository.existsByEmailIgnoreCaseAndIdNot(requestDto.getEmail(), id)) {
+//            throw new DuplicateResourceException("Email already exists");
+//        }
+//
+//        JobDesignation oldDesignation = employee.getDesignation();
+//        JobDesignation newDesignation = oldDesignation;
+//
+//        if (!oldDesignation.getId().equals(requestDto.getDesignationId())) {
+//            newDesignation = jobDesignationRepository.findById(requestDto.getDesignationId())
+//                    .orElseThrow(() -> new ResourceNotFoundException("Designation not found"));
+//            employee.setDesignation(newDesignation);
+//        }
+//
+//        if (requestDto.getSupervisorId() != null && (employee.getSupervisor() == null || !employee.getSupervisor()
+//                .getId().equals(requestDto.getSupervisorId()))) {
+//            Employee supervisor = employeeRepository.findById(requestDto.getSupervisorId())
+//                    .orElseThrow(() -> new ResourceNotFoundException("Supervisor not found"));
+//            employee.setSupervisor(supervisor);
+//        }
+//
+//        employeeMapper.updateEntityFromDto(requestDto, employee);
+//        Employee updatedEmployee = employeeRepository.saveAndFlush(employee);
+//        try {
+//            String wso2OrgId = newDesignation.getDepartment().getWso2OrgId();
+//            boolean isActive = updatedEmployee.getEmploymentStatus() == EmploymentStatus.ACTIVE;
+//
+//            wso2IdentityClientService.updateWso2User(
+//                    updatedEmployee.getWso2UserId(),
+//                    updatedEmployee.getEmail(),
+//                    updatedEmployee.getNic(),
+//                    updatedEmployee.getFirstName(),
+//                    updatedEmployee.getLastName(),
+//                    newDesignation.getDepartment().getName(),
+//                    updatedEmployee.getContactNumber(),
+//                    isActive,
+//                    wso2OrgId
+//            );
+//            log.info("Successfully synced employee update to WSO2 for ID: {}", id);
+//        } catch (Exception e) {
+//            log.error("Failed to sync employee update to WSO2 IS for ID: {}. Local DB update was successful.", id, e);
+//            // Depending on strictness, you can throw or log. Logging allows DB to update while flagging WSO2 sync issue.
+//        }
+//
+//        return employeeMapper.toResponseDto(updatedEmployee);
+//    }
 
     @Override
     public PagedResponseDto<EmployeeResponseDto> searchEmployees(

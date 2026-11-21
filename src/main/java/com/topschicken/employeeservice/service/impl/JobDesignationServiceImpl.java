@@ -24,6 +24,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 @Slf4j
@@ -37,7 +39,7 @@ public class JobDesignationServiceImpl implements JobDesignationService {
     private final EmployeeRepository employeeRepository;
     private final JobDesignationMapper jobDesignationMapper;
     private final Wso2IdentityClientService wso2IdentityClientService;
-    private final PermissionRepository permissionRepository; // මේක අලුතින් Inject කරන්න
+    private final PermissionRepository permissionRepository;
 
     @Override
     @Transactional
@@ -68,24 +70,25 @@ public class JobDesignationServiceImpl implements JobDesignationService {
             throw new BusinessValidationException("Cannot create designation under an inactive department");
         }
 
+        // 1. WSO2 call කරන්න කලින්ම Permissions validate කරගැනීම
+        List<Permission> permissionEntities = validateAndFetchPermissions(requestDto.getPermissions());
+        List<String> validScopeCodes = permissionEntities.stream()
+                .map(Permission::getScopeCode)
+                .toList();
+
         String wso2OrgId = department.getWso2OrgId();
         String wso2GroupId = null;
+        String wso2RoleId = null;
 
         try {
-            // 1. WSO2 Sub-Organization තුළ SCIM2 Group එක සෑදීම
+            // 2. WSO2 Sub-Organization තුළ SCIM2 Group එක සෑදීම
             wso2GroupId = wso2IdentityClientService.createWso2Group(normalizedTitle, wso2OrgId);
 
-            // 2. WSO2 Role එක සාදා Group එකට Bind කිරීම
-            if (requestDto.getPermissions() != null && !requestDto.getPermissions().isEmpty()) {
-                wso2IdentityClientService.createWso2RoleAndBindToGroup(
-                        normalizedTitle, requestDto.getPermissions(), wso2GroupId, wso2OrgId
+            // 3. WSO2 Role එක සාදා Group එකට Bind කිරීම
+            if (!validScopeCodes.isEmpty()) {
+                wso2RoleId = wso2IdentityClientService.createWso2RoleAndBindToGroup(
+                        normalizedTitle, validScopeCodes, wso2GroupId, wso2OrgId
                 );
-            }
-
-            // 3. Frontend එකෙන් එවපු Scope Codes ටික Database එකේ Permission Entities බවට පත් කරගැනීම
-            List<Permission> permissionEntities = null;
-            if (requestDto.getPermissions() != null && !requestDto.getPermissions().isEmpty()) {
-                permissionEntities = permissionRepository.findByScopeCodeIn(requestDto.getPermissions());
             }
 
             // 4. Local DB හි සුරැකීම
@@ -94,22 +97,184 @@ public class JobDesignationServiceImpl implements JobDesignationService {
             designation.setTitle(normalizedTitle);
             designation.setDepartment(department);
             designation.setWso2GroupId(wso2GroupId);
-            designation.setPermissions(permissionEntities); // දැන් දෙන්නේ Permission Entities ටිකයි
+            designation.setWso2RoleId(wso2RoleId);
+            designation.setPermissions(new ArrayList<>(permissionEntities));
             designation.setIsActive(true);
 
             JobDesignation savedDesignation = jobDesignationRepository.saveAndFlush(designation);
-            log.info("Job designation created successfully with ID: {} and WSO2 Group ID: {}",
-                    savedDesignation.getId(), wso2GroupId);
+            log.info("Job designation created successfully with ID: {}, WSO2 Group ID: {}, Role ID: {}",
+                    savedDesignation.getId(), wso2GroupId, wso2RoleId);
 
             return jobDesignationMapper.toResponseDto(savedDesignation);
 
         } catch (Exception ex) {
+            if (wso2RoleId != null) {
+                log.error("Rolling back WSO2 Role ID: {}", wso2RoleId);
+                wso2IdentityClientService.deleteWso2RoleSafely(wso2RoleId, wso2OrgId);
+            }
             if (wso2GroupId != null) {
-                log.error("Failed to complete designation creation. Rolling back WSO2 Group ID: {}", wso2GroupId);
+                log.error("Rolling back WSO2 Group ID: {}", wso2GroupId);
                 wso2IdentityClientService.deleteWso2GroupSafely(wso2GroupId, wso2OrgId);
             }
             throw ex;
         }
+    }
+
+    @Override
+    @Transactional
+    public JobDesignationResponseDto updateDesignation(Long id, JobDesignationRequestDto requestDto) {
+        log.info("Updating job designation with ID: {}", id);
+        JobDesignation designation = findDesignationByIdWithDepartment(id);
+
+        String normalizedCode = requestDto.getCode().trim().toUpperCase();
+        String normalizedTitle = requestDto.getTitle().trim();
+
+        // Cross-Org ගැටළු වැළැක්වීමට Department මාරු කිරීම අවහිර කිරීම
+        if (!designation.getDepartment().getId().equals(requestDto.getDepartmentId())) {
+            throw new BusinessValidationException(
+                    "Cannot change department of an existing job designation because it is bound to a WSO2 Sub-Organization"
+            );
+        }
+
+        if (jobDesignationRepository.existsByCodeIgnoreCaseAndIdNot(normalizedCode, id)) {
+            throw new DuplicateResourceException("Job designation with code '" + normalizedCode + "' already exists");
+        }
+
+        if (jobDesignationRepository.existsByDepartmentIdAndTitleIgnoreCaseAndIdNot(
+                requestDto.getDepartmentId(), normalizedTitle, id)
+        ) {
+            throw new DuplicateResourceException(
+                    "Job designation with title '" + normalizedTitle + "' already exists in this department"
+            );
+        }
+
+        if (Boolean.FALSE.equals(requestDto.getIsActive()) && Boolean.TRUE.equals(designation.getIsActive())) {
+            validateNoActiveEmployeesAssigned(id);
+        }
+
+        // Permissions Update කිරීම (Local DB + WSO2 Role Sync)
+        if (requestDto.getPermissions() != null) {
+            List<Permission> newPermissions = validateAndFetchPermissions(requestDto.getPermissions());
+            List<String> validScopeCodes = newPermissions.stream()
+                    .map(Permission::getScopeCode)
+                    .toList();
+
+            String wso2OrgId = designation.getDepartment().getWso2OrgId();
+
+            if (designation.getWso2RoleId() != null && !designation.getWso2RoleId().isBlank()) {
+                wso2IdentityClientService.updateWso2RolePermissions(
+                        designation.getWso2RoleId(), validScopeCodes, wso2OrgId
+                );
+            } else if (!validScopeCodes.isEmpty() && designation.getWso2GroupId() != null) {
+                // කලින් permissions නැතුව හදපු designation එකකට අලුතින් permissions දානවා නම් Role එක සෑදීම
+                String newRoleId = wso2IdentityClientService.createWso2RoleAndBindToGroup(
+                        normalizedTitle, validScopeCodes, designation.getWso2GroupId(), wso2OrgId
+                );
+                designation.setWso2RoleId(newRoleId);
+            }
+
+            designation.setPermissions(new ArrayList<>(newPermissions));
+        }
+
+        jobDesignationMapper.updateEntityFromDto(requestDto, designation);
+        designation.setCode(normalizedCode);
+        designation.setTitle(normalizedTitle);
+
+        JobDesignation updatedDesignation = jobDesignationRepository.saveAndFlush(designation);
+        log.info("Job designation updated successfully with ID: {}", updatedDesignation.getId());
+
+        return jobDesignationMapper.toResponseDto(updatedDesignation);
+    }
+
+    private List<Permission> validateAndFetchPermissions(List<String> requestedScopes) {
+        if (requestedScopes == null || requestedScopes.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> normalizedScopes = requestedScopes.stream()
+                .map(s -> s.trim().toLowerCase())
+                .distinct()
+                .toList();
+
+        List<Permission> foundPermissions = permissionRepository.findByScopeCodeIn(normalizedScopes);
+        if (foundPermissions.size() != normalizedScopes.size()) {
+            throw new BusinessValidationException("One or more provided permission scopes do not exist in the system");
+        }
+        return foundPermissions;
+    }
+
+    //=============================================================
+
+//    @Override
+//    @Transactional
+//    public JobDesignationResponseDto createDesignation(JobDesignationRequestDto requestDto) {
+//        log.info("Creating new job designation with code: {}", requestDto.getCode());
+//
+//        String normalizedCode = requestDto.getCode().trim().toUpperCase();
+//        String normalizedTitle = requestDto.getTitle().trim();
+//
+//        if (jobDesignationRepository.existsByCodeIgnoreCase(normalizedCode)) {
+//            throw new DuplicateResourceException("Job designation with code '" + normalizedCode + "' already exists");
+//        }
+//
+//        if (jobDesignationRepository.existsByDepartmentIdAndTitleIgnoreCase(
+//                requestDto.getDepartmentId(), normalizedTitle)
+//        ) {
+//            throw new DuplicateResourceException(
+//                    "Job designation with title '" + normalizedTitle + "' already exists in this department"
+//            );
+//        }
+//
+//        Department department = departmentRepository.findById(requestDto.getDepartmentId())
+//                .orElseThrow(() -> new ResourceNotFoundException(
+//                        "Department not found with ID: " + requestDto.getDepartmentId())
+//                );
+//
+//        if (Boolean.FALSE.equals(department.getIsActive())) {
+//            throw new BusinessValidationException("Cannot create designation under an inactive department");
+//        }
+//
+//        String wso2OrgId = department.getWso2OrgId();
+//        String wso2GroupId = null;
+//
+//        try {
+//            // 1. WSO2 Sub-Organization තුළ SCIM2 Group එක සෑදීම
+//            wso2GroupId = wso2IdentityClientService.createWso2Group(normalizedTitle, wso2OrgId);
+//
+//            // 2. WSO2 Role එක සාදා Group එකට Bind කිරීම
+//            if (requestDto.getPermissions() != null && !requestDto.getPermissions().isEmpty()) {
+//                wso2IdentityClientService.createWso2RoleAndBindToGroup(
+//                        normalizedTitle, requestDto.getPermissions(), wso2GroupId, wso2OrgId
+//                );
+//            }
+//
+//            // 3. Frontend එකෙන් එවපු Scope Codes ටික Database එකේ Permission Entities බවට පත් කරගැනීම
+//            List<Permission> permissionEntities = null;
+//            if (requestDto.getPermissions() != null && !requestDto.getPermissions().isEmpty()) {
+//                permissionEntities = permissionRepository.findByScopeCodeIn(requestDto.getPermissions());
+//            }
+//
+//            // 4. Local DB හි සුරැකීම
+//            JobDesignation designation = jobDesignationMapper.toEntity(requestDto);
+//            designation.setCode(normalizedCode);
+//            designation.setTitle(normalizedTitle);
+//            designation.setDepartment(department);
+//            designation.setWso2GroupId(wso2GroupId);
+//            designation.setPermissions(permissionEntities); // දැන් දෙන්නේ Permission Entities ටිකයි
+//            designation.setIsActive(true);
+//
+//            JobDesignation savedDesignation = jobDesignationRepository.saveAndFlush(designation);
+//            log.info("Job designation created successfully with ID: {} and WSO2 Group ID: {}",
+//                    savedDesignation.getId(), wso2GroupId);
+//
+//            return jobDesignationMapper.toResponseDto(savedDesignation);
+//
+//        } catch (Exception ex) {
+//            if (wso2GroupId != null) {
+//                log.error("Failed to complete designation creation. Rolling back WSO2 Group ID: {}", wso2GroupId);
+//                wso2IdentityClientService.deleteWso2GroupSafely(wso2GroupId, wso2OrgId);
+//            }
+//            throw ex;
+//        }
 
         //==========================================
 
@@ -158,7 +323,7 @@ public class JobDesignationServiceImpl implements JobDesignationService {
 //        log.info("Job designation created successfully with ID: {}", savedDesignation.getId());
 //
 //        return jobDesignationMapper.toResponseDto(savedDesignation);
-    }
+//    }
 
     @Override
     public JobDesignationResponseDto getDesignationById(Long id) {
@@ -175,52 +340,52 @@ public class JobDesignationServiceImpl implements JobDesignationService {
         return jobDesignationMapper.toResponseDto(designation);
     }
 
-    @Override
-    @Transactional
-    public JobDesignationResponseDto updateDesignation(Long id, JobDesignationRequestDto requestDto) {
-        log.info("Updating job designation with ID: {}", id);
-        JobDesignation designation = findDesignationByIdWithDepartment(id);
-
-        String normalizedCode = requestDto.getCode().trim().toUpperCase();
-        String normalizedTitle = requestDto.getTitle().trim();
-
-        if (jobDesignationRepository.existsByCodeIgnoreCaseAndIdNot(normalizedCode, id)) {
-            throw new DuplicateResourceException("Job designation with code '" + normalizedCode + "' already exists");
-        }
-
-        if (jobDesignationRepository.existsByDepartmentIdAndTitleIgnoreCaseAndIdNot(
-                requestDto.getDepartmentId(), normalizedTitle, id)
-        ) {
-            throw new DuplicateResourceException(
-                    "Job designation with title '" + normalizedTitle + "' already exists in this department"
-            );
-        }
-
-        if (!designation.getDepartment().getId().equals(requestDto.getDepartmentId())) {
-            Department newDepartment = departmentRepository.findById(requestDto.getDepartmentId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Department not found with ID: " + requestDto.getDepartmentId())
-                    );
-
-            if (Boolean.FALSE.equals(newDepartment.getIsActive())) {
-                throw new BusinessValidationException("Cannot move designation to an inactive department");
-            }
-            designation.setDepartment(newDepartment);
-        }
-
-        if (Boolean.FALSE.equals(requestDto.getIsActive()) && Boolean.TRUE.equals(designation.getIsActive())) {
-            validateNoActiveEmployeesAssigned(id);
-        }
-
-        jobDesignationMapper.updateEntityFromDto(requestDto, designation);
-        designation.setCode(normalizedCode);
-        designation.setTitle(normalizedTitle);
-
-        JobDesignation updatedDesignation = jobDesignationRepository.saveAndFlush(designation);
-        log.info("Job designation updated successfully with ID: {}", updatedDesignation.getId());
-
-        return jobDesignationMapper.toResponseDto(updatedDesignation);
-    }
+//    @Override
+//    @Transactional
+//    public JobDesignationResponseDto updateDesignation(Long id, JobDesignationRequestDto requestDto) {
+//        log.info("Updating job designation with ID: {}", id);
+//        JobDesignation designation = findDesignationByIdWithDepartment(id);
+//
+//        String normalizedCode = requestDto.getCode().trim().toUpperCase();
+//        String normalizedTitle = requestDto.getTitle().trim();
+//
+//        if (jobDesignationRepository.existsByCodeIgnoreCaseAndIdNot(normalizedCode, id)) {
+//            throw new DuplicateResourceException("Job designation with code '" + normalizedCode + "' already exists");
+//        }
+//
+//        if (jobDesignationRepository.existsByDepartmentIdAndTitleIgnoreCaseAndIdNot(
+//                requestDto.getDepartmentId(), normalizedTitle, id)
+//        ) {
+//            throw new DuplicateResourceException(
+//                    "Job designation with title '" + normalizedTitle + "' already exists in this department"
+//            );
+//        }
+//
+//        if (!designation.getDepartment().getId().equals(requestDto.getDepartmentId())) {
+//            Department newDepartment = departmentRepository.findById(requestDto.getDepartmentId())
+//                    .orElseThrow(() -> new ResourceNotFoundException(
+//                            "Department not found with ID: " + requestDto.getDepartmentId())
+//                    );
+//
+//            if (Boolean.FALSE.equals(newDepartment.getIsActive())) {
+//                throw new BusinessValidationException("Cannot move designation to an inactive department");
+//            }
+//            designation.setDepartment(newDepartment);
+//        }
+//
+//        if (Boolean.FALSE.equals(requestDto.getIsActive()) && Boolean.TRUE.equals(designation.getIsActive())) {
+//            validateNoActiveEmployeesAssigned(id);
+//        }
+//
+//        jobDesignationMapper.updateEntityFromDto(requestDto, designation);
+//        designation.setCode(normalizedCode);
+//        designation.setTitle(normalizedTitle);
+//
+//        JobDesignation updatedDesignation = jobDesignationRepository.saveAndFlush(designation);
+//        log.info("Job designation updated successfully with ID: {}", updatedDesignation.getId());
+//
+//        return jobDesignationMapper.toResponseDto(updatedDesignation);
+//    }
 
     @Override
     @Transactional

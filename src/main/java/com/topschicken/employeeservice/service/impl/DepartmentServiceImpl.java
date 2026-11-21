@@ -54,16 +54,22 @@ public class DepartmentServiceImpl implements DepartmentService {
                 requestDto.getDescription()
         );
 
-        Department department = departmentMapper.toEntity(requestDto);
-        department.setCode(normalizedCode);
-        department.setName(normalizedName);
-        department.setIsActive(true);
-        department.setWso2OrgId(wso2OrgId);
+        try {
+            Department department = departmentMapper.toEntity(requestDto);
+            department.setCode(normalizedCode);
+            department.setName(normalizedName);
+            department.setIsActive(true);
+            department.setWso2OrgId(wso2OrgId);
 
-        Department savedDepartment = departmentRepository.save(department);
-        log.info("Department created successfully with ID: {}", savedDepartment.getId());
+            Department savedDepartment = departmentRepository.saveAndFlush(department);
+            log.info("Department created successfully with ID: {} and WSO2 Org ID: {}", savedDepartment.getId(), wso2OrgId);
 
-        return departmentMapper.toResponseDto(savedDepartment);
+            return departmentMapper.toResponseDto(savedDepartment);
+        } catch (Exception ex) {
+            log.error("Failed to save department to local DB. Rolling back WSO2 Organization ID: {}", wso2OrgId, ex);
+            wso2IdentityClientService.deleteWso2OrganizationSafely(wso2OrgId);
+            throw ex;
+        }
     }
 
     @Override
@@ -111,6 +117,14 @@ public class DepartmentServiceImpl implements DepartmentService {
         department.setName(normalizedName);
 
         Department updatedDepartment = departmentRepository.saveAndFlush(department);
+        if (updatedDepartment.getWso2OrgId() != null && !updatedDepartment.getWso2OrgId().isBlank()) {
+            wso2IdentityClientService.updateWso2Organization(
+                    updatedDepartment.getWso2OrgId(),
+                    updatedDepartment.getName(),
+                    updatedDepartment.getDescription(),
+                    Boolean.TRUE.equals(updatedDepartment.getIsActive())
+            );
+        }
         log.info("Department updated successfully with ID: {}", updatedDepartment.getId());
 
         return departmentMapper.toResponseDto(updatedDepartment);
@@ -130,6 +144,15 @@ public class DepartmentServiceImpl implements DepartmentService {
 
         department.setIsActive(isActive);
         Department updatedDepartment = departmentRepository.saveAndFlush(department);
+
+        if (updatedDepartment.getWso2OrgId() != null && !updatedDepartment.getWso2OrgId().isBlank()) {
+            wso2IdentityClientService.updateWso2Organization(
+                    updatedDepartment.getWso2OrgId(),
+                    updatedDepartment.getName(),
+                    updatedDepartment.getDescription(),
+                    isActive
+            );
+        }
 
         return departmentMapper.toResponseDto(updatedDepartment);
     }

@@ -45,6 +45,7 @@ public interface EmployeeMapper {
     @Mapping(target = "vaccinationRecords", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
+    @Mapping(target = "wso2UserId", ignore = true)
     Employee toEntity(EmployeeRequestDto requestDto);
 
     @Mapping(target = "id", ignore = true)
@@ -54,6 +55,7 @@ public interface EmployeeMapper {
     @Mapping(target = "addresses", ignore = true)
     @Mapping(target = "bankAccounts", ignore = true)
     @Mapping(target = "documents", ignore = true)
+    @Mapping(target = "wso2UserId", ignore = true)
     void updateEntityFromDto(EmployeeRequestDto requestDto, @MappingTarget Employee employee);
 
     // Sub-Mappers
