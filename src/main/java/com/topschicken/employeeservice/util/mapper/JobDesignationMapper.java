@@ -26,15 +26,14 @@ public interface JobDesignationMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "department", ignore = true)
     @Mapping(target = "isActive", ignore = true)
-    @Mapping(target = "permissions", ignore = true) // Service එකේ manual map කරන නිසා මෙතනින් Ignore කරනවා
+    @Mapping(target = "permissions", ignore = true)
     JobDesignation toEntity(JobDesignationRequestDto requestDto);
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "department", ignore = true)
-    @Mapping(target = "permissions", ignore = true) // Service එකේ manual map කරන නිසා මෙතනින් Ignore කරනවා
+    @Mapping(target = "permissions", ignore = true)
     void updateEntityFromDto(JobDesignationRequestDto requestDto, @MappingTarget JobDesignation designation);
 
-    // අලුතින් එක් කළ කොටස: Entity එකෙන් DTO එකට යනකොට Permission Objects ටික Strings බවට පත් කිරීම
     default List<String> mapPermissions(List<Permission> permissions) {
         if (permissions == null) {
             return null;

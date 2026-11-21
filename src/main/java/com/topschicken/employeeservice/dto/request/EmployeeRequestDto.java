@@ -36,7 +36,9 @@ public class EmployeeRequestDto {
     private String lastName;
 
     @NotBlank(message = "NIC is mandatory")
-    @Pattern(regexp = "^([0-9]{9}[x|X|v|V]|[0-9]{12})$", message = "Invalid Sri Lankan NIC format (e.g., 200012345678 or 981234567V)")
+    @Pattern(regexp = "^([0-9]{9}[x|X|v|V]|[0-9]{12})$",
+            message = "Invalid Sri Lankan NIC format (e.g., 200012345678 or 981234567V)"
+    )
     private String nic;
 
     @NotNull(message = "Gender is mandatory")

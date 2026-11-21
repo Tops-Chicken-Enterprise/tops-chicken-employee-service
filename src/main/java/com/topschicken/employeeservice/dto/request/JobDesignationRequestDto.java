@@ -24,7 +24,9 @@ public class JobDesignationRequestDto {
 
     @NotBlank(message = "Designation code is mandatory")
     @Size(max = 30, message = "Code must not exceed 30 characters")
-    @Pattern(regexp = "^[A-Z0-9_-]+$", message = "Code must contain only uppercase letters, numbers, hyphens or underscores")
+    @Pattern(regexp = "^[A-Z0-9_-]+$",
+            message = "Code must contain only uppercase letters, numbers, hyphens or underscores"
+    )
     private String code;
 
     @NotBlank(message = "Designation title is mandatory")

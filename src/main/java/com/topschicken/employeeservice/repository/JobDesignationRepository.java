@@ -27,7 +27,10 @@ public interface JobDesignationRepository extends JpaRepository<JobDesignation, 
 
     boolean existsByDepartmentIdAndTitleIgnoreCaseAndIdNot(Long departmentId, String title, Long id);
 
-    @Query("SELECT jd FROM JobDesignation jd JOIN FETCH jd.department WHERE jd.department.id = :departmentId AND jd.isActive = true ORDER BY jd.title ASC")
+    @Query(
+            "SELECT jd FROM JobDesignation jd JOIN FETCH jd.department WHERE jd.department.id = :departmentId" +
+                    " AND jd.isActive = true ORDER BY jd.title ASC"
+    )
     List<JobDesignation> findAllByDepartmentIdAndIsActiveTrueOrderByTitleAsc(@Param("departmentId") Long departmentId);
 
     boolean existsByDepartmentIdAndIsActiveTrue(Long departmentId);

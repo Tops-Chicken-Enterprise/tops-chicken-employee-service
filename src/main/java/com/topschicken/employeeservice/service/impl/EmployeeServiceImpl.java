@@ -61,6 +61,11 @@ public class EmployeeServiceImpl implements EmployeeService {
                         "Designation not found with ID: " + requestDto.getDesignationId())
                 );
 
+        if (Boolean.FALSE.equals(designation.getIsActive()) ||
+                Boolean.FALSE.equals(designation.getDepartment().getIsActive())) {
+            throw new BusinessValidationException("Cannot assign employee to an inactive designation or department");
+        }
+
         String targetWso2OrgId = designation.getDepartment().getWso2OrgId();
 
         String existingWso2UserId = wso2IdentityClientService.findUserByUsername(
@@ -83,7 +88,6 @@ public class EmployeeServiceImpl implements EmployeeService {
         );
 
         try {
-            // 1. හැදුණු සේවකයාව අදාළ JobDesignation එකේ WSO2 Group එකට ඇතුළත් කිරීම
             if (designation.getWso2GroupId() != null && !designation.getWso2GroupId().isBlank()) {
                 wso2IdentityClientService.addUserToWso2Group(
                         designation.getWso2GroupId(),
@@ -93,30 +97,24 @@ public class EmployeeServiceImpl implements EmployeeService {
                 );
             }
 
-            // 2. Local DB හි සේවකයාව සුරැකීම
-            transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-            return transactionTemplate.execute(status ->
+            assert transactionTemplate.getTransactionManager() != null;
+            TransactionTemplate requiresNewTemplate =
+                    new TransactionTemplate(transactionTemplate.getTransactionManager());
+            requiresNewTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            return requiresNewTemplate.execute(status ->
                     saveEmployeeToDb(requestDto, designation, wso2UserId));
         } catch (Exception ex) {
             log.error("Failed to assign group or save employee to local DB. Rolling back WSO2 user creation for: {}",
                     requestDto.getEmpCode(), ex);
             wso2IdentityClientService.deleteWso2UserSafely(wso2UserId, targetWso2OrgId);
-            throw new RuntimeException("Error occurred during employee onboarding. WSO2 user creation was rolled back.", ex);
+            throw new RuntimeException(
+                    "Error occurred during employee onboarding. WSO2 user creation was rolled back.", ex);
         }
-
-//        try {
-//            transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-//            return transactionTemplate.execute(status ->
-//                    saveEmployeeToDb(requestDto, designation, wso2UserId));
-//        } catch (Exception ex) {
-//            log.error("Failed to save employee to local DB. Rolling back WSO2 user creation for: {}",
-//                    requestDto.getEmpCode(), ex);
-//            wso2IdentityClientService.deleteWso2UserSafely(wso2UserId, targetWso2OrgId);
-//            throw new RuntimeException("Database error occurred. WSO2 user creation was rolled back.", ex);
-//        }
     }
 
-    public EmployeeResponseDto saveEmployeeToDb(EmployeeRequestDto requestDto, JobDesignation designation, String wso2UserId) {
+    public EmployeeResponseDto saveEmployeeToDb(
+            EmployeeRequestDto requestDto, JobDesignation designation, String wso2UserId
+    ) {
         Employee employee = employeeMapper.toEntity(requestDto);
         employee.setDesignation(designation);
         employee.setWso2UserId(wso2UserId);
@@ -154,7 +152,7 @@ public class EmployeeServiceImpl implements EmployeeService {
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found with ID: " + id));
 
         if (requestDto.getSupervisorId() != null && requestDto.getSupervisorId().equals(id)) {
-            throw new IllegalArgumentException("An employee cannot be their own supervisor");
+            throw new BusinessValidationException("An employee cannot be their own supervisor");
         }
         if (employeeRepository.existsByNicAndIdNot(requestDto.getNic(), id)) {
             throw new DuplicateResourceException("NIC already exists");
@@ -175,12 +173,18 @@ public class EmployeeServiceImpl implements EmployeeService {
             newDesignation = jobDesignationRepository.findById(requestDto.getDesignationId())
                     .orElseThrow(() -> new ResourceNotFoundException("Designation not found"));
 
-            // වෙනත් Department (WSO2 Sub-Org) එකකට මාරු කිරීම අවහිර කිරීම
+            if (Boolean.FALSE.equals(newDesignation.getIsActive()) ||
+                    Boolean.FALSE.equals(newDesignation.getDepartment().getIsActive())) {
+                throw new BusinessValidationException(
+                        "Cannot assign employee to an inactive designation or department");
+            }
+
             String oldOrgId = oldDesignation.getDepartment().getWso2OrgId();
             String newOrgId = newDesignation.getDepartment().getWso2OrgId();
             if (!Objects.equals(oldOrgId, newOrgId)) {
                 throw new BusinessValidationException(
-                        "Cannot change employee to a designation in a different department/organization via standard update"
+                        "Cannot change employee to a designation in" +
+                                " a different department/organization via standard update"
                 );
             }
             employee.setDesignation(newDesignation);
@@ -200,7 +204,6 @@ public class EmployeeServiceImpl implements EmployeeService {
             String wso2OrgId = newDesignation.getDepartment().getWso2OrgId();
             boolean isActive = updatedEmployee.getEmploymentStatus() == EmploymentStatus.ACTIVE;
 
-            // 1. WSO2 User profile update කිරීම
             wso2IdentityClientService.updateWso2User(
                     updatedEmployee.getWso2UserId(),
                     updatedEmployee.getEmail(),
@@ -213,7 +216,6 @@ public class EmployeeServiceImpl implements EmployeeService {
                     wso2OrgId
             );
 
-            // 2. Designation එක වෙනස් වුණා නම් පරණ Group එකෙන් අයින් කරලා අලුත් Group එකට දැමීම
             if (designationChanged && updatedEmployee.getWso2UserId() != null) {
                 if (oldDesignation.getWso2GroupId() != null && !oldDesignation.getWso2GroupId().isBlank()) {
                     wso2IdentityClientService.removeUserFromWso2Group(
@@ -240,71 +242,18 @@ public class EmployeeServiceImpl implements EmployeeService {
         return employeeMapper.toResponseDto(updatedEmployee);
     }
 
-    //==================================================
-
-//    @Override
-//    @Transactional
-//    public EmployeeResponseDto updateEmployee(Long id, EmployeeRequestDto requestDto) {
-//        Employee employee = employeeRepository.findById(id)
-//                .orElseThrow(() -> new ResourceNotFoundException("Employee not found with ID: " + id));
-//
-//        if (requestDto.getSupervisorId() != null && requestDto.getSupervisorId().equals(id)) {
-//            throw new IllegalArgumentException("An employee cannot be their own supervisor");
-//        }
-//        if (employeeRepository.existsByNicAndIdNot(requestDto.getNic(), id)) {
-//            throw new DuplicateResourceException("NIC already exists");
-//        }
-//        if (employeeRepository.existsByEmailIgnoreCaseAndIdNot(requestDto.getEmail(), id)) {
-//            throw new DuplicateResourceException("Email already exists");
-//        }
-//
-//        JobDesignation oldDesignation = employee.getDesignation();
-//        JobDesignation newDesignation = oldDesignation;
-//
-//        if (!oldDesignation.getId().equals(requestDto.getDesignationId())) {
-//            newDesignation = jobDesignationRepository.findById(requestDto.getDesignationId())
-//                    .orElseThrow(() -> new ResourceNotFoundException("Designation not found"));
-//            employee.setDesignation(newDesignation);
-//        }
-//
-//        if (requestDto.getSupervisorId() != null && (employee.getSupervisor() == null || !employee.getSupervisor()
-//                .getId().equals(requestDto.getSupervisorId()))) {
-//            Employee supervisor = employeeRepository.findById(requestDto.getSupervisorId())
-//                    .orElseThrow(() -> new ResourceNotFoundException("Supervisor not found"));
-//            employee.setSupervisor(supervisor);
-//        }
-//
-//        employeeMapper.updateEntityFromDto(requestDto, employee);
-//        Employee updatedEmployee = employeeRepository.saveAndFlush(employee);
-//        try {
-//            String wso2OrgId = newDesignation.getDepartment().getWso2OrgId();
-//            boolean isActive = updatedEmployee.getEmploymentStatus() == EmploymentStatus.ACTIVE;
-//
-//            wso2IdentityClientService.updateWso2User(
-//                    updatedEmployee.getWso2UserId(),
-//                    updatedEmployee.getEmail(),
-//                    updatedEmployee.getNic(),
-//                    updatedEmployee.getFirstName(),
-//                    updatedEmployee.getLastName(),
-//                    newDesignation.getDepartment().getName(),
-//                    updatedEmployee.getContactNumber(),
-//                    isActive,
-//                    wso2OrgId
-//            );
-//            log.info("Successfully synced employee update to WSO2 for ID: {}", id);
-//        } catch (Exception e) {
-//            log.error("Failed to sync employee update to WSO2 IS for ID: {}. Local DB update was successful.", id, e);
-//            // Depending on strictness, you can throw or log. Logging allows DB to update while flagging WSO2 sync issue.
-//        }
-//
-//        return employeeMapper.toResponseDto(updatedEmployee);
-//    }
-
     @Override
     public PagedResponseDto<EmployeeResponseDto> searchEmployees(
             String search, Long departmentId, EmploymentStatus status, Long farmId, Pageable pageable) {
 
-        Page<Employee> page = employeeRepository.searchAllEmployees(search, departmentId, status, farmId, pageable);
+        String sanitizedSearch = (search == null || search.isBlank()) ? null
+                : search.trim().replace(
+                        "\\", "\\\\").replace("%", "\\%")
+                .replace("_", "\\_");
+        Page<Employee> page = employeeRepository.searchAllEmployees(
+                sanitizedSearch, departmentId, status, farmId, pageable
+        );
+
         return PagedResponseDto.of(
                 employeeMapper.toResponseDtoList(page.getContent()),
                 PageMetaDataDto.from(page)

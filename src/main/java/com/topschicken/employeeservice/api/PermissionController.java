@@ -19,7 +19,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PermissionController {
 
-    private final PermissionService permissionService; // Interface එක inject කර ඇත
+    private final PermissionService permissionService;
 
     @PostMapping
     public ResponseEntity<ApiResponseDto<PermissionResponseDto>> createPermission(
@@ -28,7 +28,9 @@ public class PermissionController {
         PermissionResponseDto response = permissionService.createPermission(requestDto);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(ApiResponseDto.success(HttpStatus.CREATED.value(), "Permission created successfully", response));
+                .body(
+                        ApiResponseDto.success(HttpStatus.CREATED.value(),
+                                "Permission created successfully", response));
     }
 
     @GetMapping

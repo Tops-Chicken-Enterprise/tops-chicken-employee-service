@@ -58,7 +58,6 @@ public interface EmployeeMapper {
     @Mapping(target = "wso2UserId", ignore = true)
     void updateEntityFromDto(EmployeeRequestDto requestDto, @MappingTarget Employee employee);
 
-    // Sub-Mappers
     EmployeeAddressResponseDto addressToResponseDto(EmployeeAddress address);
     List<EmployeeAddressResponseDto> addressToResponseDtoList(List<EmployeeAddress> addresses);
     @Mapping(target = "id", ignore = true)
@@ -78,8 +77,6 @@ public interface EmployeeMapper {
     @Mapping(target = "uploadedBy", ignore = true)
     EmployeeDocument docRequestToEntity(EmployeeDocumentRequestDto requestDto);
 
-
-    // Helper methods for custom mapping logic
     default String constructFullName(Employee employee) {
         if (employee == null) return null;
         StringBuilder fullName = new StringBuilder();
