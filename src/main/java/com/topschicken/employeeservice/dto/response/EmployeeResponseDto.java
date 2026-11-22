@@ -40,19 +40,16 @@ public class EmployeeResponseDto {
     private Long farmId;
     private Long shedId;
 
-
     private Long designationId;
     private String designationTitle;
     private Long departmentId;
     private String departmentName;
-
 
     private Long supervisorId;
     private String supervisorName;
 
     private String wso2UserId;
     private String profileImageUrl;
-
 
     private List<EmployeeAddressResponseDto> addresses;
     private List<EmployeeBankAccountResponseDto> bankAccounts;
